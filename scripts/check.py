@@ -10,10 +10,12 @@ The secrets gate never prints a matched value: it reports only the file and line
 
 from __future__ import annotations
 
+import ast
 import re
 import subprocess
 import sys
 import time
+from collections.abc import Iterable
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -46,7 +48,12 @@ GATES: list[tuple[str, list[str]]] = [
 def tracked_files(root: Path) -> list[str]:
     """Paths (POSIX, relative to ``root``) of every git-tracked or staged file."""
     out = subprocess.run(
-        ["git", "ls-files", "-z"], cwd=root, check=True, capture_output=True, text=True
+        ["git", "ls-files", "-z"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     ).stdout
     return [p for p in out.split("\0") if p]
 
@@ -86,6 +93,71 @@ def secret_findings(root: Path) -> list[str]:
     return findings
 
 
+_SUBPROCESS_CALLS = frozenset({"run", "Popen", "check_output", "check_call", "call"})
+
+
+def _kwarg_names(call: ast.Call) -> set[str | None]:
+    return {k.arg for k in call.keywords}
+
+
+def _is_true(call: ast.Call, name: str) -> bool:
+    return any(
+        k.arg == name and isinstance(k.value, ast.Constant) and k.value.value is True
+        for k in call.keywords
+    )
+
+
+def _encoding_issue(call: ast.Call) -> str | None:
+    """What is wrong with this call, if it reads or writes text without naming an encoding."""
+    func, kw, n = call.func, _kwarg_names(call), len(call.args)
+    if isinstance(func, ast.Attribute):
+        if func.attr == "read_text" and "encoding" not in kw and n < 1:
+            return "read_text() without encoding"
+        if func.attr == "write_text" and "encoding" not in kw and n < 2:
+            return "write_text() without encoding"
+        if func.attr == "TextIOWrapper" and "encoding" not in kw and n < 2:
+            return "TextIOWrapper() without encoding"
+        is_subprocess = isinstance(func.value, ast.Name) and func.value.id == "subprocess"
+        text_mode = _is_true(call, "text") or _is_true(call, "universal_newlines")
+        if is_subprocess and func.attr in _SUBPROCESS_CALLS and text_mode and "encoding" not in kw:
+            return f"subprocess.{func.attr}(text=True) without encoding"
+    elif isinstance(func, ast.Name) and func.id == "open":
+        mode: ast.expr | None = call.args[1] if n > 1 else None
+        for k in call.keywords:
+            if k.arg == "mode":
+                mode = k.value
+        binary = (
+            isinstance(mode, ast.Constant) and isinstance(mode.value, str) and "b" in mode.value
+        )
+        if not binary and "encoding" not in kw:
+            return "open() without encoding"
+    return None
+
+
+def encoding_problems(files: Iterable[Path], root: Path) -> list[str]:
+    """``path:line: what`` for every text read or write that leaves the encoding to the platform
+    default (cp1252 on Windows). Ruff's PLW1514 cannot see ``p.read_text()`` on a variable."""
+    found: list[str] = []
+    for path in files:
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError, OSError):
+            continue
+        rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and (issue := _encoding_issue(node)):
+                found.append(f"{rel}:{node.lineno}: {issue}")
+    return sorted(found)
+
+
+def _encoding_gate() -> int:
+    files = [REPO_ROOT / rel for rel in tracked_files(REPO_ROOT) if rel.endswith(".py")]
+    found = encoding_problems(files, REPO_ROOT)
+    for line in found:
+        print(f"  {line}")
+    return 1 if found else 0
+
+
 def _size_gate() -> int:
     big = oversized_tracked_files(REPO_ROOT)
     for rel, size in big:
@@ -118,7 +190,8 @@ def main(argv: list[str] | None = None) -> int:
         code = subprocess.call([sys.executable, "-m", *cmd], cwd=REPO_ROOT)
         results.append((name, code == 0, time.perf_counter() - start))
 
-    for name, gate in (("file size", _size_gate), ("secrets", _secrets_gate)):
+    gates = (("file size", _size_gate), ("secrets", _secrets_gate), ("encoding", _encoding_gate))
+    for name, gate in gates:
         print(f"\n=== {name} ===", flush=True)
         start = time.perf_counter()
         results.append((name, gate() == 0, time.perf_counter() - start))

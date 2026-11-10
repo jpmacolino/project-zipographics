@@ -156,7 +156,13 @@ def test_a_handler_added_after_install_is_protected_in_a_clean_process() -> None
         "    log.exception('boom')\n"
     )
     out = subprocess.run(
-        [sys.executable, "-c", script], capture_output=True, text=True, cwd=ROOT, check=True
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=ROOT,
+        check=True,
     ).stdout
     assert "GET" in out and "Traceback" in out
     assert KEY not in out

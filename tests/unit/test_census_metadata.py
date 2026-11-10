@@ -112,7 +112,13 @@ def test_importing_the_whole_runtime_package_does_not_load_build_code_or_dotenv(
         "print(','.join(sorted(bad)))\n"
     )
     result = subprocess.run(
-        [sys.executable, "-c", script], capture_output=True, text=True, cwd=ROOT, check=True
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=ROOT,
+        check=True,
     )
     assert result.stdout.strip() == "", f"runtime import pulled in: {result.stdout.strip()}"
 

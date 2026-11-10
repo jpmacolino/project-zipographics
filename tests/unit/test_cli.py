@@ -163,7 +163,11 @@ def test_csv_and_report_files_are_written(monkeypatch: pytest.MonkeyPatch, tmp_p
     )  # fmt: skip
     assert code == 0 and csv_path.exists() and html_path.exists()
     frame = pd.read_csv(
-        csv_path, dtype=str, skipfooter=len(cli_footer(csv_path)) + 1, engine="python"
+        csv_path,
+        dtype=str,
+        skipfooter=len(cli_footer(csv_path)) + 1,
+        engine="python",
+        encoding="utf-8",
     )
     assert list(frame["ZIP"][:2]) == ["33602", "02108"]  # leading zero kept
     html = html_path.read_text(encoding="utf-8")

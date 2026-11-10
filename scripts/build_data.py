@@ -23,7 +23,9 @@ def main(argv: Sequence[str] | None = None, *, env_file: Path | None = None) -> 
     if not (os.environ.get("CENSUS_API_KEY") or "").strip():
         os.environ.pop("CENSUS_API_KEY", None)  # a blank variable must not hide the file's key
     try:
-        load_dotenv(env_file if env_file is not None else REPO / ".env", override=False)
+        load_dotenv(
+            env_file if env_file is not None else REPO / ".env", override=False, encoding="utf-8"
+        )
     except UnicodeDecodeError:
         print(
             "The .env file could not be read: save it as UTF-8 (in Notepad: Save As, Encoding "

@@ -32,7 +32,7 @@ def _forms(secret: str) -> set[str]:
 def redact(text: str, secrets: Iterable[str | None] = ()) -> str:
     """Replace ``key=<anything>`` and every literal occurrence of each secret (plain and
     URL-encoded) in ``text``. Safe to apply twice."""
-    out = _ENV_ASSIGNMENT.sub("CENSUS_API_KEY=REDACTED", text)
+    out = _ENV_ASSIGNMENT.sub("CENSUS_API_KEY=" + MASK, text)
     out = _KEY_PARAM.sub(REDACTED, out)
     forms: set[str] = set()
     for secret in secrets:

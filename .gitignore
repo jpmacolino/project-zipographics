@@ -1,0 +1,43 @@
+# Python / tooling
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Secrets: .env holds CENSUS_API_KEY. Never commit it (or any .env variant except the example).
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+.claude/settings.local.json
+
+# Data (built locally by scripts/build_data.py; never committed)
+data/*
+!data/README.md
+data/raw/
+
+# Processed data must never be committed (tiny synthetic test fixtures excepted)
+*.parquet
+!tests/fixtures/**/*.parquet
+
+# QA artifacts
+qa/screenshots/
+qa/probes/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

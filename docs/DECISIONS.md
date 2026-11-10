@@ -283,3 +283,71 @@ clean "could not be read as CSV" message.
   running the cleanup loop; no valid token is that long.
 - Two repaired ZIPs in different states flag each other (spec-literal). Unknown population counts as
   0 when choosing the dominant state.
+
+### Phase 2: formulas quoted from the official documents (2026-11-09)
+
+Sources read from the PDFs' text layers (the equations themselves are images and don't extract;
+each formula below was reconstructed from the text and **checked numerically against the
+document's published worked example**, shown in the last column).
+
+**V9 verified: ACS General Handbook 2020, ch. 8** ("Calculating Measures of Error for Derived
+Estimates", pp. 59-66,
+[PDF](https://www.census.gov/content/dam/Census/library/publications/2020/acs/acs_general_handbook_2020_ch08.pdf)).
+
+| measure | official text (verbatim where quoted) | formula | worked example reproduced |
+|---|---|---|---|
+| Sum (1) | "1. Obtain the MOE of each component estimate. 2. Square the MOE of each component estimate. 3. Sum the squared MOEs. 4. Take the square root of the sum of the squared MOEs." (p. 59) | `MOE = sqrt(sum MOE_i^2)` | ±3,860, ±2,642, ±1,957 -> **±5,070** (we get 5,070.46); sums 203,119 (p. 60) |
+| SE (2) | "SE (Fairfax) = 3,860 / 1.645 = 2,347" (p. 60) | `SE = MOE / 1.645` | 2,346.5 / 1,606.1 / 1,189.7 |
+| CV (4) | "CV (Subgroup 1) = (630 / 3,497) * 100 = ... 18.0 percent" (p. 63) | `CV = SE / estimate * 100` | 18.0 / 16.0 / 13.0 % (Table 8.2 groups: ±1,036, ±931, ±1,557) |
+| Proportion (6) | "With proportions, the numerator is a subset of the denominator." The garbled extraction shows `MOE(P) = (1/Y) sqrt([MOE(X)]^2 - (P^2 * [MOE(Y)]^2))`; "if the value under the square root is negative, then substitute a 'plus' for the 'minus' sign under the square root in formula (6). This modified formula is the same as the formula for the MOE of a ratio" (p. 64) | `MOE(P) = sqrt(MOE(X)^2 - P^2 MOE(Y)^2) / Y` | P = 203,119 / 630,498 = 0.322, MOE(X) = 5,070, MOE(Y) = ±831 -> **0.8 %** (we get 0.803 %; SE 0.488) |
+| Ratio (7) | "Ratios are used to compare two estimates where the numerator is not a subset of the denominator." (p. 65) | `MOE(R) = sqrt(MOE(X)^2 + R^2 MOE(Y)^2) / Y` | 226,840 / 203,119 = 1.117, males ±5,556.5, females ±5,070 -> **0.039** (we get 0.0391); CV 2.1 % |
+| Product (9) | "The formula to calculate the MOE of a product is: (9)" (p. 66) | `MOE(AB) = sqrt(A^2 MOE(B)^2 + B^2 MOE(A)^2)` | 74,506,512 ± 228,238 × 0.824 ± 0.001 = 61,393,366 -> **±202,289** (we get 202,288.99) |
+| Approximation | "this method for calculating the MOE and SE for aggregated count data is an approximation, and caution is warranted because this method does not consider the correlation or covariance between the component estimates... as the number of estimates involved in a sum or difference increases, the results of the approximation formula become increasingly different from the SE derived directly from the ACS microdata. Users are encouraged to work with the fewest number of estimates possible." (p. 61) | labeled "approximate" everywhere | Table 8.3: published ±973 vs derived ±931 (the method can underestimate) |
+
+**Findings that differ from, or are missing in, the spec**
+1. **Zero-estimate guidance is not in ch. 8.** SPEC §6.3 says to check "the handbook's guidance on
+   including only the largest zero-estimate MOE". The 2020 chapter 8 has no such rule (it points to
+   a separate "Worked Examples for Approximating Margins of Error" document, not fetched).
+   **Decision:** sum every component MOE (the formula as printed). It is conservative: many
+   zero-estimate bracket MOEs can inflate a sum's MOE. Revisit if QA or the owner reads the worked
+   examples document.
+2. **No numeric CV thresholds** appear in the chapter (it only calls CVs of 0.2-2 % "very
+   reliable"). The 15 % / 30 % tiers (D2) stay a documented judgment call.
+3. The chapter's examples are 2015 1-year data; the formulas are vintage-independent.
+
+**V8 verified: ACS PUMS Accuracy of the Data 2020-2024** ("Medians", pp. 16-20,
+[PDF](https://www2.census.gov/programs-surveys/acs/tech_docs/pums/accuracy/2020_2024AccuracyPUMS.pdf)).
+- "The standard error of an estimated median is approximated by constructing a 68 percent
+  confidence interval." Steps: "Approximate the standard error of a 50 percent proportion...
+  Create the variable p_lower by subtracting the SE from 50 percent. Create p_upper by adding the
+  SE to 50 percent... `SE(median) = 1/2 X (Upper Bound – Lower Bound)`".
+- Bounds by linear interpolation inside the category holding p: "Define A1 as the smallest value in
+  that category. Define A2 as the smallest value in the next (higher) category. Define C1 as the
+  cumulative percent of units strictly less than A1. Define C2 as the cumulative percent of units
+  strictly less than A2." The formula image didn't extract; from the example it is
+  `bound = A1 + (p - C1) / (C2 - C1) * (A2 - A1)`.
+- **Worked example reproduced** (Massachusetts household income, B19001-style brackets): A1 =
+  60,000, A2 = 75,000, C1 = 44.68, C2 = 53.75; p_lower = 49.80 -> **68,467.48** (we get 68,467.475);
+  p_upper = 50.20 -> **69,129.00** (69,128.997); SE(median) = ½ × (69,129.00 − 68,467.48) =
+  **330.76** (330.76). Median of that distribution by the same interpolation at 50 %: 68,803.14
+  (hand calculation from the document's counts: 60,000 + (1,274,858 − 1,139,123) / 231,284 ×
+  15,000).
+- "The ACS calculates medians using a linear interpolation method" (p. 17, confirming V8).
+- "Users please note that the 2024 ACS PUMS will be the final year design factors will be
+  published" (p. 14; confirming V8).
+- The document gets SE(50 %) from a design factor (image formulas; the example uses SE(50 %) = 0.20
+  with DF 1.5 and base 2,549,716). **Zipographics does not use design factors**: per SPEC §6.4 it
+  derives SE(p) from the bracket MOEs with the proportion formula (6) at P = 0.5, applied to the
+  cumulative count below the median bracket over N.
+
+**D8 (2026-11-09). Median MOE derivation (SPEC §6.4), recorded before implementing.** For a
+trade-area median from summed brackets with counts n_i (MOEs m_i): N = Σ n_i (MOE_N = sqrt(Σ m_i²)).
+Let k be the median bracket, X = Σ_{i≤k} n_i the cumulative count through bracket k (MOE_X =
+sqrt(Σ_{i≤k} m_i²)). SE(p) for the 50 % point is `MOE(X/N at P=0.5) / 1.645` from formula (6) with
+the numerator being the cumulative count up to (and including) the bracket containing the median
+and P replaced by 0.5: `SE(p) = sqrt(MOE_X² − 0.25 MOE_N²) / N / 1.645` (ratio form if the radicand
+is negative). Then p_lo = 0.5 − SE(p), p_hi = 0.5 + SE(p) (clamped to (0, 1)), the interpolated
+values at those proportions give the interval, `SE(median) = ½ (v_hi − v_lo)` and `MOE = 1.645 ×
+SE`. Cumulative "through bracket k" is used (not "below k") so the proportion is the share at or
+below the bracket boundary the median lies in; it is a labeled approximation. A worked example is
+in `tests/unit/test_stats_median.py`.

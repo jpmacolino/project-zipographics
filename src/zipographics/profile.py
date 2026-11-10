@@ -136,7 +136,7 @@ def _agg(e: F, m: F, coef: F, w: F, axes: tuple[int, ...]) -> _Agg:
     moe_ok = ~(present & np.isnan(wm)).any(axis=axes)
     sq = np.where(present & ~np.isnan(wm), wm**2, 0.0).sum(axis=axes)
     moe = np.where(any_present & moe_ok, np.sqrt(sq), np.nan)
-    return _Agg(est, moe, (~present).any(axis=axes))
+    return _Agg(est, moe, np.asarray((~present).any(axis=axes)))
 
 
 def _paired(ne: F, nm: F, de: F, dm: F) -> tuple[F, F, F, F]:
@@ -144,7 +144,8 @@ def _paired(ne: F, nm: F, de: F, dm: F) -> tuple[F, F, F, F]:
     denominator value at all, leaves *both* sums (else its people inflate the denominator and the
     share is biased low). The ZIP is then reported as missing, so the result is flagged incomplete.
     Real 2020-2024 data has such ZIPs for many variables (DECISIONS B17)."""
-    keep = (~np.isnan(ne)).any(axis=0) & (~np.isnan(de)).any(axis=0)
+    # np.asarray: numpy 2.4 (the Python 3.11 pin) types .any(axis=...) as bool | ndarray
+    keep = np.asarray((~np.isnan(ne)).any(axis=0)) & np.asarray((~np.isnan(de)).any(axis=0))
     mask = keep[None, :]
     return (
         np.where(mask, ne, np.nan),

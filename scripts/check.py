@@ -1,9 +1,15 @@
 """Run every quality gate: ruff lint, ruff format check, mypy, pytest + coverage, and two
 repo-hygiene checks (no tracked file over 1 MB; no tracked secrets). See docs/SPEC.md section 8.
 
-Usage: uv run python scripts/check.py [--no-cov]
+Usage: uv run python scripts/check.py [--no-cov] [--skip-py311]
 Exits non-zero if any gate fails. Prints a summary table at the end.
 Always runs from the repository root, whatever the current directory is.
+
+After the gates above (which run on the current Python), mypy and the tests run again on Python
+3.11, the oldest supported version, in a separate environment (``.venv311``, made by ``uv``): the
+lockfile pins different library versions below 3.12 (numpy 2.4 vs 2.5), so code can type-check on
+one and fail on the other. ``--skip-py311`` skips it for a quick local loop; the phase-end run must
+not.
 
 The secrets gate never prints a matched value: it reports only the file and line number.
 """
@@ -11,7 +17,9 @@ The secrets gate never prints a matched value: it reports only the file and line
 from __future__ import annotations
 
 import ast
+import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -42,6 +50,18 @@ GATES: list[tuple[str, list[str]]] = [
     ("ruff format", ["ruff", "format", "--check", "."]),
     ("mypy", ["mypy"]),
     ("pytest", ["pytest", "--cov=zipographics", "--cov-report=term-missing"]),
+]
+
+
+PY311_ENV = REPO_ROOT / ".venv311"
+_UV311 = ["uv", "run", "--python", "3.11"]
+PY311_STEPS: list[tuple[str, list[str]]] = [
+    ("py311 sync", ["uv", "sync", "--python", "3.11"]),
+    ("py311 mypy", [*_UV311, "python", "-m", "mypy"]),
+    (
+        "py311 pytest",
+        [*_UV311, "python", "-m", "pytest", "-q", "--no-cov", "-p", "no:cacheprovider"],
+    ),
 ]
 
 
@@ -219,15 +239,33 @@ def _secrets_gate() -> int:
     return 1 if found else 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = sys.argv[1:] if argv is None else argv
-    unknown = [a for a in args if a != "--no-cov"]
+def parse_args(args: list[str]) -> tuple[bool, bool]:
+    """(no_cov, skip_py311); exits with 2 on anything else."""
+    unknown = [a for a in args if a not in ("--no-cov", "--skip-py311")]
     if unknown:
         print(
-            f"unknown argument(s): {' '.join(unknown)}\nusage: check.py [--no-cov]", file=sys.stderr
+            f"unknown argument(s): {' '.join(unknown)}\nusage: check.py [--no-cov] [--skip-py311]",
+            file=sys.stderr,
         )
-        return 2
-    no_cov = "--no-cov" in args
+        raise SystemExit(2)
+    return "--no-cov" in args, "--skip-py311" in args
+
+
+def _py311_gate() -> int:
+    """mypy and the tests on Python 3.11 in their own environment (see the module docstring)."""
+    if shutil.which("uv") is None:
+        print("  uv is not on PATH: it is needed to run Python 3.11 (install it, or --skip-py311)")
+        return 1
+    env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(PY311_ENV)}
+    for name, cmd in PY311_STEPS:
+        print(f"  {name}: {' '.join(cmd)}", flush=True)
+        if subprocess.call(cmd, cwd=REPO_ROOT, env=env) != 0:
+            return 1
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    no_cov, skip_py311 = parse_args(sys.argv[1:] if argv is None else argv)
     results: list[tuple[str, bool, float]] = []
     for name, cmd in GATES:
         if no_cov and name == "pytest":
@@ -237,7 +275,9 @@ def main(argv: list[str] | None = None) -> int:
         code = subprocess.call([sys.executable, "-m", *cmd], cwd=REPO_ROOT)
         results.append((name, code == 0, time.perf_counter() - start))
 
-    gates = (("file size", _size_gate), ("secrets", _secrets_gate), ("encoding", _encoding_gate))
+    gates = [("file size", _size_gate), ("secrets", _secrets_gate), ("encoding", _encoding_gate)]
+    if not skip_py311:
+        gates.append(("python 3.11", _py311_gate))
     for name, gate in gates:
         print(f"\n=== {name} ===", flush=True)
         start = time.perf_counter()

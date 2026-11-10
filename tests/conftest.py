@@ -9,11 +9,13 @@ socket pairs on Windows.
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from hypothesis import HealthCheck, settings
 
 _real_connect = socket.socket.connect
 
@@ -46,3 +48,15 @@ def _no_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(socket.socket, "connect", guarded_connect)
     yield
+
+
+# Hypothesis profiles: a quick local default, more examples in CI, a thorough one on demand.
+#   HYPOTHESIS_PROFILE=thorough uv run pytest      (or ci); CI=true selects "ci" automatically.
+# Tests set no max_examples of their own, so the profile decides how hard they search.
+_COMMON = {"deadline": None, "suppress_health_check": [HealthCheck.too_slow]}
+settings.register_profile("default", max_examples=25, **_COMMON)
+settings.register_profile("ci", max_examples=150, **_COMMON)
+settings.register_profile("thorough", max_examples=600, **_COMMON)
+settings.load_profile(
+    os.environ.get("HYPOTHESIS_PROFILE", "ci" if os.environ.get("CI") else "default")
+)

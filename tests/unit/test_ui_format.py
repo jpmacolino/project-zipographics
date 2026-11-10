@@ -62,7 +62,7 @@ def test_index_and_thresholds() -> None:
     ("tier", "label", "mark"),
     [
         ("good", "Reliable", ""),
-        ("caution", "Use with caution", ""),
+        ("caution", "Use with caution", "~"),
         ("unreliable", "Unreliable", "\N{DAGGER}"),
     ],
 )

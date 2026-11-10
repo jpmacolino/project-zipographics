@@ -475,7 +475,7 @@ def test_benchmark_profile_uses_published_values_for_one_geography() -> None:
 
 
 # ------------------------------------------------------------------------------- properties
-@settings(max_examples=25, deadline=None)
+@settings(deadline=None)
 @given(st.integers(0, 10_000), st.floats(0.01, 1.0))
 def test_shares_stay_in_zero_one_and_scale_invariants_hold(seed: int, w: float) -> None:
     frame = random_frame(8, seed=seed)

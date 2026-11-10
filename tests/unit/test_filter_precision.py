@@ -103,7 +103,7 @@ def test_displayed_value_matches_the_text_for_every_unit() -> None:
             )
 
 
-@settings(max_examples=150, deadline=None)
+@settings(deadline=None)
 @given(share=st.integers(min_value=0, max_value=10_000))
 def test_a_displayed_share_always_meets_a_threshold_equal_to_it(share: int) -> None:
     owner = share / 10_000  # a share of 10,000 households, so the estimate is exactly this
@@ -119,7 +119,7 @@ def test_a_displayed_share_always_meets_a_threshold_equal_to_it(share: int) -> N
     assert qualifies(a, "owner", ">=", typed) and qualifies(a, "owner", "<=", typed)
 
 
-@settings(max_examples=100, deadline=None)
+@settings(deadline=None)
 @given(income=st.floats(min_value=10_000, max_value=240_000, allow_nan=False))
 def test_a_displayed_dollar_amount_always_meets_a_threshold_equal_to_it(income: float) -> None:
     a = analysis_of(income=income)

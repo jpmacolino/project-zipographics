@@ -44,3 +44,4 @@ qa/probes/
 .idea/
 .DS_Store
 Thumbs.db
+.venv311/

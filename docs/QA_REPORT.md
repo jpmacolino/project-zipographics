@@ -272,3 +272,14 @@ AppTest), coverage **98.31 %** (line + branch, `src/zipographics`; the app file 
 **56 `data` tests**, **5 `visual` scenarios** re-run after the fixes. The default suite now takes about 5.5 minutes
 (SPEC 7 asks for under 30 s for the unit layer): most of the time is the 258-metric x policy guard matrices, the
 Hypothesis tests and the AppTest runs; to be trimmed (or split behind a marker) in Phase 7.
+
+### Python 3.11 CI failure (2026-11-10; regression note)
+| # | symptom | root cause | fix | regression test |
+|---|---|---|---|---|
+| 53 | CI green on Python 3.12, red on 3.11 (ubuntu and windows) | `uv.lock` pins numpy 2.4.6 below 3.12 and 2.5.4 from 3.12; 2.4's stubs type `.any(axis=...)` as `bool \| ndarray`, so `profile._agg`/`_paired` failed `mypy` on 3.11 only; nothing run locally used 3.11 | `np.asarray(...)` at both sites; `scripts/check.py` runs sync + mypy + pytest on 3.11 in `.venv311` (`--skip-py311` to skip) | `tests/unit/test_py311_gate.py` (gate steps, ignored env, tool targets, lock pins numpy per Python, CI matrix) |
+
+Local reproduction: `UV_PROJECT_ENVIRONMENT=.venv311 uv run --python 3.11 python -m mypy` showed the two errors;
+the 3.11 test run (2,308 passed) had been green all along, so the failure was the type check. **Lesson:** gates
+that pass on one interpreter say nothing about the other when the lockfile resolves different dependencies per
+Python version; the phase-end `check.py` now covers both. Also in this change: Hypothesis profiles (P16) cut the
+default property-test cost (the suite is still dominated by its 2,300 tests, about 80 s of which are AppTest).

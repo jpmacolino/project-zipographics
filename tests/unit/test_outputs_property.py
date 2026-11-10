@@ -270,7 +270,7 @@ ALL_OUTPUTS: list[Callable[[Scenario], None]] = [
 ]  # fmt: skip
 
 
-@settings(max_examples=40, deadline=None, suppress_health_check=list(HealthCheck))
+@settings(deadline=None, suppress_health_check=list(HealthCheck))
 @given(s=scenarios())
 def test_no_output_path_raises_on_a_random_trade_area(s: Scenario) -> None:
     for fn in ALL_OUTPUTS:

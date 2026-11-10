@@ -736,3 +736,15 @@ note about the caution tier in P13. (`ui.TIER_MARK`, `ui.marker_for`.)
 (households: X of Y)" now sums *in-radius* households (full households x overlap, a blank overlap counting as a
 full ZIP) when in-radius estimates are on, and full-ZIP households otherwise, so Y equals the Households KPI card
 in both modes. Supersedes the "filter summary basis" note in P13.
+
+**P16. Python 3.11 stays supported; Hypothesis profiles (owner requests, 2026-11-10).** CI failed on 3.11 (ubuntu
+and windows) and passed on 3.12. Cause (reproduced locally in a separate `.venv311`; the CI logs themselves were
+not available to me): `uv.lock` pins **numpy 2.4.6 below Python 3.12 and 2.5.4 from 3.12 on** (numpy 2.5 needs
+3.12), and 2.4's type stubs give `ndarray.any(axis=...)` the type `bool | ndarray`, so two lines in
+`profile.py` type-checked on 3.12 and failed `mypy` on 3.11. The tests themselves passed on 3.11. The fix is two
+`np.asarray(...)` wraps, so the alternative (raising the minimum to 3.12 and dropping 3.11 from CI) was not
+needed. ruff `target-version = "py311"` and mypy `python_version = "3.11"` were already set. `scripts/check.py`
+now also runs `uv sync` + `mypy` + the whole test suite on Python 3.11 in its own environment (`.venv311`,
+gitignored; `--skip-py311` for a quick loop, not for a phase-end run). **Hypothesis profiles** in
+`tests/conftest.py`: `default` 25 examples locally, `ci` 150 (selected automatically when `CI` is set),
+`thorough` 600 (`HYPOTHESIS_PROFILE=thorough`); property tests no longer set their own `max_examples`.

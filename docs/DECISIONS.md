@@ -406,3 +406,61 @@ declares 74 metrics (Appendix C) over about 270 Census variables.
 - Deferred, see the Phase 2 entry in QA_REPORT: in-radius per-ZIP household/population columns and a
   per-ZIP index tier (Phase 5/6), "1939 or earlier" display text for the bottom year-built bound
   (Phase 5/6), how often null cells bias shares in real data (Phase 4).
+
+### Phase 3 decisions (2026-11-09): redact, census_api, data_build
+
+**B13. Census client and key handling (SPEC §4.5).**
+- **How the API's answers map to exit codes.** HTTP 200 with a non-JSON body (the API's "Invalid
+  Key" page) and a 400/401 whose body mentions "key" are a rejected key (exit 3). HTTP 403 and 407
+  are a proxy or network policy (exit 4, "not a problem with your key", never retried; DECISIONS
+  V13). 429 and 5xx are retried (1, 2, 4, 8 s plus up to 25 % jitter, five attempts in all) and then
+  exit 4. Any other 4xx (for example `unknown variable`) is exit 4 with the API's own message and is
+  not blamed on the key. An unexpected Python error is exit 1 with one redacted line (the spec lists
+  no code for it).
+- **URLs are built by hand** (`for=zip%20code%20tabulation%20area:*`): `requests` would encode the
+  spaces as `+`. A test through the real `requests` stack (with `responses`) pins the shape.
+- **Names per request:** at most 50 in all, counting `NAME`; `NAME` is requested in the first chunk for
+  state/county/us only. Each variable's `E`, `M` (and `EA` for medians) stay in one chunk. `MA`
+  (margin-of-error annotations) is not requested: nothing uses it (SPEC §4.5 listed it).
+- **`variables.json` is fetched without the key** (metadata needs none) and cached like data.
+- **Cache:** `data/raw/acs/{vintage}/{sha256 of the key-free URL}.json` plus `.meta.json` (key-free URL,
+  fetch time); downloaded files sit in `data/raw/` with the same kind of sidecar. Error pages are never cached.
+- **Redaction mechanism.** `redact()` handles `key=` (also `key%3D`), `CENSUS_API_KEY=...` (but not the
+  `<your key>` placeholder in the help text) and the key's literal and URL-encoded forms.
+  `install_redaction()` replaces the logging record factory, so every record from every logger and
+  handler (including handlers added later) is scrubbed, tracebacks included, and sets `urllib3` to
+  WARNING. The client installs it in its constructor; the CLI also installs it before anything else.
+  Errors are raised outside `except` blocks (no `__cause__`/`__context__`). The secrets gate in
+  `scripts/check.py` flags `CENSUS_API_KEY=<8+ chars>` in source, so redact.py builds that string from a
+  constant instead of weakening the gate.
+- **No `--census-api-key` flag** (a test checks three spellings are usage errors). The key is read
+  from the environment only; `scripts/build_data.py` is the only file that imports `dotenv`.
+
+**B14. Data build design.**
+- **Validation before writing.** Nothing is written unless the output validates (SPEC §4.4); files are
+  written atomically (`.tmp` then rename). The checks: row count (≥ 33,000, `config.MIN_ZCTA_ROWS`),
+  5-digit text ZIPs, no value at or below -100,000,000, every referenced state and county and the
+  nation has a benchmark row, every registry variable resolved with its `_e`/`_m` columns, core KPI
+  variables non-null for ≥ 95 % of ZCTAs with population > 0, geometry ZIPs ⊆ profile ZIPs and no
+  null geometry, and ≤ 1 % of ZCTAs without a state (a broken county join).
+- **Core KPI variables** are the variables of `pop`, `hh`, `median_hh_income` (the *published* median
+  only, not its brackets), `owner` and `hh_kids` (SPEC §5.5 "always" cards).
+- **Partial builds:** `--only acs` and `--only geo` merge into the existing `metadata.json`; geometry
+  alone is checked against the profile on disk.
+- **Artifacts:** `zcta_profile.parquet` stores `zip` as a text column; `benchmarks.parquet` has
+  `geo_level`/`geo_id`/`name` (ids are FIPS text: 2-digit state, 5-digit county, `1` for the nation);
+  `metadata.json` holds the vintage, key-free dataset and file URLs, resolved variables (id, label,
+  table, whether the ID moved), row counts, per-variable coverage, sentinel counts by column and code,
+  the top/bottom-code cross-check (counts and bound values per published median), geometry source and
+  tolerance, and the app version.
+- **Map tolerance default 0.002°** (Zipcator uses 0.0005 for a ~40 MB file; the map needs no area math).
+  Phase 4 measures the real size against the ≈30 MB target. Zipcator's parquet is reused when
+  `ZIPOGRAPHICS_ZIPCATOR_PARQUET` points at a file with a text `zip` column in EPSG:4326 (not
+  re-simplified), otherwise the reason is recorded in `metadata.json`.
+- **Unverified until Phase 4:** the D4 relationship-file column names (taken from Zipcator's working
+  reader), the GeoNames format, the real `variables.json` labels (the `network` tests resolve the
+  registry against the live file), the annotation strings the API returns for top/bottom codes, and
+  whether the 5-year notes page lists the same six sentinel values.
+- **Hypothesis sweeps.** Running the numeric property tests with 40 more seeds exposed scalar/vectorized
+  disagreements at absurd magnitudes (QA_REPORT #15); the rule going forward is that both
+  implementations return "unknown" for non-finite intermediates and for an index above 1e9.

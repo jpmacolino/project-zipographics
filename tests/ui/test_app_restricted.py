@@ -58,7 +58,7 @@ def test_the_lens_is_the_context_lens_and_cannot_be_changed(at: AppTest) -> None
 
 
 def test_the_table_is_static_not_a_sortable_grid(at: AppTest) -> None:
-    assert len(at.table) == 1
+    assert len(at.table) >= 1  # the ZIP table (and the grey-cells list), both static
     table_frame = at.table[0].value
     assert list(table_frame["ZIP"]) == ["33606", "33602", "33603"]
     # the only dataframes left are the chart data tables, none of which is the ZIP table
@@ -80,11 +80,9 @@ def test_the_zip_list_is_exactly_the_input(at: AppTest) -> None:
 
 
 def test_the_attestation_says_restricted_mode_is_on(at: AppTest) -> None:
-    assert "Attestation recorded with this export" in [e.label for e in at.expander]
-    body = " ".join(str(m.value) for m in at.markdown)
-    assert "Restricted mode: on" in body or "Restricted mode: on" in " ".join(
-        str(x.value) for e in at.expander for x in e.markdown
-    )
+    captions = " ".join(str(c.value) for c in at.caption)  # shown above the ZIP list, not hidden
+    assert "Restricted mode: on" in captions and "Filters applied: none" in captions
+    assert "Answer: Yes" in captions
 
 
 def test_kpi_cards_and_charts_are_still_shown_as_context(at: AppTest) -> None:

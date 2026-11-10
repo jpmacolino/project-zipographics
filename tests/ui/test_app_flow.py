@@ -290,7 +290,11 @@ def test_zip_cells_stay_text_with_their_leading_zero(new_app: NewApp) -> None:
 def test_download_buttons_and_the_report(new_app: NewApp) -> None:
     at = go_step4(new_app(), "33602 33606 33603")
     names = {b.proto.label for b in at.get("download_button")}
-    assert {"Download ZIP list (.txt)", "Download CSV", "Download CSV for Excel"} <= names
+    assert {
+        "Download ZIP list, one per line (.txt)",
+        "Download CSV",
+        "Download CSV for Excel",
+    } <= names
     at.button(key="prep_report").click().run()
     names = {b.proto.label for b in at.get("download_button")}
     assert "Download report (.html)" in names and not at.exception

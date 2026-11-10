@@ -105,3 +105,19 @@ def sort_choices(*, restricted: bool) -> list[tuple[str, str]]:
     if restricted:
         return [("input", "As entered"), ("zip", "By ZIP")]
     return [("input", "Input order"), ("zip", "ZIP"), *[(m.id, m.name) for m in metrics.REGISTRY]]
+
+
+_DEFAULT_NUMBER = {
+    "percent": 50.0,  # as typed, i.e. 50 %
+    "dollars": 50_000.0,
+    "count": 1000.0,
+    "year": 1980.0,
+    "years": 40.0,
+    "ratio": 1.5,
+}
+
+
+def default_number(metric: str, basis: str) -> float:
+    """The number a rule starts with after its metric or basis changes (a typed "70 %" must not
+    silently become "$70")."""
+    return 100.0 if basis == "index" else _DEFAULT_NUMBER[metrics.BY_ID[metric].unit]

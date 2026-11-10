@@ -61,6 +61,7 @@ def _form() -> dict:  # type: ignore[type-arg]
 
 def _go(step: int) -> None:
     st.session_state.step = step
+    st.session_state.pop("report", None)  # a report belongs to one run of step 4
 
 
 def _start_over() -> None:
@@ -161,6 +162,8 @@ def step_zips(form: dict) -> None:  # type: ignore[type-arg]
     else:
         up = st.file_uploader("CSV or text file", type=["csv", "txt"], key="uploader")
         if up is not None:
+            if up.getvalue() != form["csv_bytes"]:  # a different file: forget the old column choice
+                form["csv_column"] = form["csv_candidates"] = form["notice"] = None
             form["csv_name"], form["csv_bytes"] = up.name, up.getvalue()
         elif form["csv_name"]:
             st.caption(f"Using the file you added earlier: {form['csv_name']}")
@@ -230,9 +233,16 @@ def step_review(form: dict, art: data.Artifacts) -> None:  # type: ignore[type-a
 
 
 # ----------------------------------------------------------------------------- step 4
+def _input_key(parsed: ParsedInput) -> tuple[object, ...]:
+    """Everything in the parsed input that changes the numbers (ZIPs *and* overlaps)."""
+    return (
+        parsed.zips, tuple(sorted(parsed.overlaps.items())), parsed.blank_overlap, parsed.source,
+    )  # fmt: skip
+
+
 def _analysis(form: dict, art: data.Artifacts, parsed: ParsedInput, policy: UsePolicy,
               ref: object, mode: str | None, lens: str | None) -> analysis.Analysis:  # type: ignore[type-arg]  # fmt: skip
-    key = (parsed.zips, repr(ref), mode, lens, form["project"], policy)
+    key = (_input_key(parsed), repr(ref), mode, lens, form["project"], policy)
     cache = st.session_state.get("analysis_cache")
     if cache and cache[0] == key:
         return cache[1]  # type: ignore[no-any-return]
@@ -240,6 +250,22 @@ def _analysis(form: dict, art: data.Artifacts, parsed: ParsedInput, policy: UseP
                          benchmark=ref, mode=mode, lens=lens)  # type: ignore[arg-type]  # fmt: skip
     st.session_state.analysis_cache = (key, a)
     return a
+
+
+def _base_analysis(
+    form: dict,
+    art: data.Artifacts,
+    parsed: ParsedInput,
+    policy: UsePolicy,  # type: ignore[type-arg]
+) -> analysis.Analysis:
+    """The default-benchmark analysis whose options fill the selectors (cached)."""
+    key = (_input_key(parsed), form["project"], policy)
+    cache = st.session_state.get("base_cache")
+    if cache and cache[0] == key:
+        return cache[1]  # type: ignore[no-any-return]
+    base = analysis.analyze(art, parsed, policy, project_name=form["project"] or None)
+    st.session_state.base_cache = (key, base)
+    return base
 
 
 def _rules_state() -> list[Rule]:
@@ -251,6 +277,11 @@ def _rules_state() -> list[Rule]:
 def _apply_preset(name: str, policy: UsePolicy) -> None:
     st.session_state.rules = list(lenses.preset(name, policy).rules)
     st.session_state.rules_version = st.session_state.get("rules_version", 0) + 1
+    _reset_rule_state()
+
+
+def _reset_rule_state() -> None:
+    st.session_state.rule_sigs = {}
 
 
 def _add_rule() -> None:
@@ -292,8 +323,15 @@ def _filter_builder(a: analysis.Analysis) -> list[Rule]:
         op = c[1].selectbox("Operator", [">=", "<="], index=[">=", "<="].index(op),
                             key=f"r_op_{k}", label_visibility="collapsed")  # fmt: skip
         unit = flow.value_unit(metric, basis)
-        number = c[2].number_input(f"Value ({unit or 'number'})", value=float(number),
-                                   key=f"r_val_{k}", label_visibility="collapsed")  # fmt: skip
+        sigs = st.session_state.setdefault("rule_sigs", {})
+        if sigs.get(k, (metric, basis)) != (metric, basis):  # the unit changed: the old number is
+            number = flow.default_number(metric, basis)  # meaningless ("70 %" is not "$70")
+        sigs[k] = (metric, basis)
+        number = c[2].number_input(
+            f"Value ({unit or 'number'})", value=float(number), key=f"r_val_{k}_{metric}_{basis}",
+            label_visibility="collapsed",
+        )  # fmt: skip
+        c[2].caption(unit or "number")
         c[4].button("Remove", key=f"r_del_{k}", on_click=_remove_rule, args=(i,))
         edited.append(flow.rule_from_inputs(metric, op, number, basis))
     st.session_state.rules = edited
@@ -362,7 +400,11 @@ def _table_section(
                 }
                 for c in bad
             ]
-            st.dataframe(pd.DataFrame(rows), hide_index=True)
+            grey = pd.DataFrame(rows)
+            if a.restricted:  # a click-sortable grid of ZIP values would be ranking (SPEC 5.7)
+                st.table(grey.set_index("ZIP"))
+            else:
+                st.dataframe(grey, hide_index=True)
     return ids, view.zips
 
 
@@ -441,6 +483,16 @@ def _map_section(
         )
 
 
+def _report_key(
+    a: analysis.Analysis, result: filters.FilterResult | None, ids: list[str]
+) -> tuple[object, ...]:
+    """What a prepared report was built from; a download is offered only while it still matches."""
+    rules = () if result is None else result.rules
+    kept = () if result is None else result.qualifying
+    cache = st.session_state.get("analysis_cache")
+    return (cache[0] if cache else None, rules, kept, tuple(ids), a.restricted, a.policy)
+
+
 def _exports_section(a: analysis.Analysis, art: data.Artifacts, result: filters.FilterResult | None,
                      ids: list[str], zips: tuple[str, ...]) -> None:  # fmt: skip
     st.markdown("#### Export")
@@ -448,9 +500,8 @@ def _exports_section(a: analysis.Analysis, art: data.Artifacts, result: filters.
     names = export.filenames(a.project_name, now.date())
     notice = export.ad_platform_notice(a.policy)
     st.markdown("**ZIP list for ad platforms**")
-    with st.expander("Attestation recorded with this export"):
-        for line in export.attestation(a, result, now=now, version=__version__):
-            st.write(line)
+    for line in export.attestation(a, result, now=now, version=__version__):
+        st.caption(line)  # shown directly above the list (SPEC 5.6): recorded in the CSV and report
     if notice:
         st.warning(notice)
     include_nf = st.checkbox("Include ZIPs that have no Census data", value=True, key="include_nf")
@@ -458,22 +509,24 @@ def _exports_section(a: analysis.Analysis, art: data.Artifacts, result: filters.
     if result is not None and result.active:
         export_all = st.checkbox("Export all ZIPs instead of only the matches", key="export_all")
     qualifying = None if (result is None or not result.active or export_all) else result.qualifying
-    comma = export.zip_list(a, qualifying=qualifying, include_not_found=include_nf, style="comma")
-    newline = export.zip_list(
-        a, qualifying=qualifying, include_not_found=include_nf, style="newline"
-    )
+    lists = {
+        style: export.zip_list(a, qualifying=qualifying, include_not_found=include_nf, style=style)
+        for style in ("comma", "newline")
+    }
     c1, c2 = st.columns(2)
     c1.caption("Comma-separated")
-    c1.code(comma or " ", language=None, wrap_lines=True)
+    c1.code(lists["comma"] or " ", language=None, wrap_lines=True)
     c2.caption("One per line")
-    c2.code(newline or " ", language=None, wrap_lines=True)
-    st.download_button(
-        "Download ZIP list (.txt)",
-        newline.encode("utf-8"),
-        file_name=names["ziplist"],
-        mime="text/plain",
-        key="dl_zips",
-    )
+    c2.code(lists["newline"] or " ", language=None, wrap_lines=True)
+    d1, d2 = st.columns(2)
+    d1.download_button(
+        "Download ZIP list, comma-separated (.txt)", lists["comma"].encode("utf-8"),
+        file_name=names["ziplist"], mime="text/plain", key="dl_zips_comma",
+    )  # fmt: skip
+    d2.download_button(
+        "Download ZIP list, one per line (.txt)", lists["newline"].encode("utf-8"),
+        file_name=names["ziplist"], mime="text/plain", key="dl_zips_lines",
+    )  # fmt: skip
 
     st.markdown("**Table as CSV**")
     c1, c2 = st.columns(2)
@@ -483,14 +536,9 @@ def _exports_section(a: analysis.Analysis, art: data.Artifacts, result: filters.
         (c2, True, "Download CSV for Excel", names["csv_excel"]),
     ):
         payload = export.csv_bytes(
-            a,
-            result,
-            excel=excel,
-            metric_ids=ids or None,
-            order=order,
-            now=now,
+            a, result, excel=excel, metric_ids=ids or None, order=order, now=now,
             version=__version__,
-        )
+        )  # fmt: skip
         col.download_button(label, payload, file_name=fname, mime="text/csv", key=f"dl_csv_{excel}")
     st.caption(
         "The CSV ends with a blank line and then Note: lines (the attestation). Programs can "
@@ -498,25 +546,30 @@ def _exports_section(a: analysis.Analysis, art: data.Artifacts, result: filters.
     )
 
     st.markdown("**Summary report**")
+    key = _report_key(a, result, ids)
     if st.button("Prepare the summary report", key="prep_report"):
         started = time.perf_counter()
         html = report.render(
             a, result, geo=art.geo, now=now, version=__version__, metric_ids=ids or None
         )
-        st.session_state.report = (html.encode("utf-8"), time.perf_counter() - started)
-    if "report" in st.session_state:
-        payload, secs = st.session_state.report
-        st.download_button("Download report (.html)", payload, file_name=names["report"],
+        st.session_state.report = (key, html.encode("utf-8"), time.perf_counter() - started)
+    saved = st.session_state.get("report")
+    if saved is not None and saved[0] == key:
+        st.download_button("Download report (.html)", saved[1], file_name=names["report"],
                            mime="text/html", key="dl_report")  # fmt: skip
         st.caption(
-            f"Prepared in {secs:.1f} s. Open it in a browser; Print > Save as PDF makes a PDF."
+            f"Prepared in {saved[2]:.1f} s. Open it in a browser; Print > Save as PDF makes a PDF."
+        )
+    elif saved is not None:
+        st.caption(
+            "The report you prepared no longer matches the settings above; prepare it again."
         )
 
 
 def step_insights(form: dict, art: data.Artifacts) -> None:  # type: ignore[type-arg]
     parsed: ParsedInput = st.session_state.parsed
     policy = _policy(form)
-    base = analysis.analyze(art, parsed, policy, project_name=form["project"] or None)
+    base = _base_analysis(form, art, parsed, policy)
     choices = flow.benchmark_choices(base.options)
 
     top = st.columns([3, 2, 2])
@@ -576,6 +629,7 @@ def step_insights(form: dict, art: data.Artifacts) -> None:  # type: ignore[type
 
     rules: list[Rule] = []
     result: filters.FilterResult | None = None
+    rules_ok = True
     if not a.restricted:
         rules = _filter_builder(a)
         exclude = (
@@ -586,6 +640,7 @@ def step_insights(form: dict, art: data.Artifacts) -> None:  # type: ignore[type
         except ValueError as exc:
             st.error(str(exc))
             result = None
+            rules_ok = False
         if result is not None and result.active:
             st.success(result.summary_line())
             if result.unreliable_matches:
@@ -601,7 +656,11 @@ def step_insights(form: dict, art: data.Artifacts) -> None:  # type: ignore[type
     ids, zips = _table_section(a, result)
     _charts_section(a)
     _map_section(a, art, result)
-    _exports_section(a, art, result, ids, zips)
+    if rules_ok:
+        _exports_section(a, art, result, ids, zips)
+    else:  # exporting every ZIP while a broken filter is on screen would mislead
+        st.markdown("#### Export")
+        st.warning("Fix the filter rule above to enable the exports.")
     st.button("Back to review", on_click=_go, args=(3,), key="back_4")
     st.button("Start over", on_click=_start_over, key="start_over")
 

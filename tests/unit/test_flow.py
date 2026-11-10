@@ -87,3 +87,16 @@ def test_sort_choices_depend_on_restricted_mode() -> None:
     assert open_[0] == ("input", "Input order") and ("owner", "Homeowners") in open_
     locked = flow.sort_choices(restricted=True)
     assert locked == [("input", "As entered"), ("zip", "By ZIP")]
+
+
+def test_a_sensible_default_number_for_each_unit_and_basis() -> None:
+    assert flow.default_number("owner", "value") == 50.0  # percent, as typed
+    assert flow.default_number("owner", "index") == 100.0
+    assert flow.default_number("median_hh_income", "value") == 50_000.0
+    assert flow.default_number("median_age", "value") == 40.0
+    assert flow.default_number("pop", "value") == 1000.0
+    for m in metrics.REGISTRY:  # every default converts to a valid rule value
+        for basis in flow.bases_for(m.id):
+            rule = flow.rule_from_inputs(m.id, ">=", flow.default_number(m.id, basis), basis)
+            if m.unit == "percent" and basis == "value":
+                assert 0 <= rule.value <= 1

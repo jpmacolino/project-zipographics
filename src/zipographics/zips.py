@@ -86,9 +86,6 @@ class ZipCollector:
         self._invalid: list[str] = []
         self.duplicates = 0
 
-    def __contains__(self, zip_code: object) -> bool:
-        return zip_code in self._kept
-
     def add(self, raw: str) -> Added | None:
         """Normalize and record one token; blank input is ignored (returns None)."""
         if not raw.strip(_STRIP_CHARS):

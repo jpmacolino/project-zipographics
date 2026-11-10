@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+
+from zipographics.config import MAX_UPLOAD_BYTES
 from zipographics.importer import (
     ColumnChoiceRequired,
     ImportFileError,
@@ -19,8 +21,6 @@ from zipographics.importer import (
     is_zipcator_header,
     sniff_delimiter,
 )
-
-from zipographics.config import MAX_UPLOAD_BYTES
 
 FX = Path(__file__).resolve().parents[1] / "fixtures" / "zipcator"
 
@@ -96,6 +96,9 @@ BOSTON_PARTIAL = {  # the rows of the CLI table that are not 100.0 %
 }
 
 
+DISPLAY_FLOORED = {"02445"}  # shown as 0.1 by the CLI; really 0.0065 % (see the CSV)
+
+
 def read(name: str) -> bytes:
     return (FX / name).read_bytes()
 
@@ -138,7 +141,12 @@ def test_boston_variants_all_give_the_same_zips_and_overlaps(name: str) -> None:
     assert p.zips == tuple(BOSTON_ZIPS)
     assert p.is_zipcator
     for z in BOSTON_ZIPS:
-        assert p.overlaps[z] == pytest.approx(BOSTON_PARTIAL.get(z, 100.0), abs=0.05), z
+        if z in DISPLAY_FLOORED:
+            # The CLI table never shows a listed ZIP as 0.0 (zipcator.export.display_overlap
+            # floors at 0.1), but the CSV keeps the exact value.
+            assert 0 < p.overlaps[z] <= 0.1, z
+        else:
+            assert p.overlaps[z] == pytest.approx(BOSTON_PARTIAL.get(z, 100.0), abs=0.05), z
 
 
 @pytest.mark.parametrize("name", BOSTON_REAL)
@@ -506,17 +514,39 @@ def test_sniff_delimiter(text: str, expected: str) -> None:
 # ----------------------------------------------------------------- limits and errors
 def test_file_at_the_size_limit_is_accepted_and_one_byte_over_is_not() -> None:
     base = b"ZIP\n02108\n"
-    at_limit = base + b" " * (MAX_UPLOAD_BYTES - len(base))
+    at_limit = base + b"\n" * (MAX_UPLOAD_BYTES - len(base))  # blank lines are ignored
     assert len(at_limit) == MAX_UPLOAD_BYTES
     assert import_csv(at_limit).zips == ("02108",)
     with pytest.raises(ImportFileError, match="5 MB"):
-        import_csv(at_limit + b" ")
+        import_csv(at_limit + b"\n")
+
+
+def test_a_single_enormous_field_is_a_clean_error_not_a_crash() -> None:
+    # csv's own field limit is 128 KB; the user should get a message, not a traceback
+    data = b"ZIP\n02108\n" + b" " * 200_000
+    with pytest.raises(ImportFileError, match="CSV"):
+        import_csv(data)
 
 
 @pytest.mark.parametrize("data", [b"", b"\n\n", b"   \r\n  "])
 def test_empty_file_is_an_error(data: bytes) -> None:
     with pytest.raises(ImportFileError, match="empty"):
         import_csv(data)
+
+
+def test_a_file_of_only_delimiters_is_empty() -> None:
+    with pytest.raises(ImportFileError, match="empty"):
+        import_csv(b",,,\r\n,,\r\n")
+
+
+def test_header_only_file_without_a_zip_like_column_is_an_error() -> None:
+    with pytest.raises(ImportFileError, match="ZIP column"):
+        import_csv(csv_bytes("Name,Where\n"))
+
+
+def test_malformed_utf16_falls_back_instead_of_crashing() -> None:
+    # a UTF-16 BOM followed by an odd number of bytes cannot be UTF-16
+    assert isinstance(decode_bytes(b"\xff\xfe\x41"), str)
 
 
 def test_import_errors_are_value_errors() -> None:

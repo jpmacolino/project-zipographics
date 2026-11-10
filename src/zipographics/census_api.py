@@ -211,14 +211,32 @@ class CensusClient:
             raise CensusApiError(f"The Census API response has no {', '.join(missing)} column.")
         return pd.DataFrame(rows[1:], columns=header, dtype=object)
 
-    def _get(self, url: str, cache_dir: Path) -> str:
+    def fetch_variables(self, vintage: int, dataset: Dataset) -> dict[str, dict[str, str]]:
+        """``variables.json`` for a vintage: ``{variable id: {"label": ..., "group": ...}}``.
+
+        Metadata needs no key, so none is sent.
+        """
+        url = f"{dataset_url(vintage, dataset)}/variables.json"
+        text = self._get(
+            url, self._cache_root / "acs" / str(vintage), with_key=False, expect="object"
+        )
+        raw = json.loads(text)["variables"]
+        return {
+            vid: {"label": str(info.get("label", "")), "group": str(info.get("group", ""))}
+            for vid, info in raw.items()
+            if isinstance(info, dict)
+        }
+
+    def _get(
+        self, url: str, cache_dir: Path, *, with_key: bool = True, expect: str = "rows"
+    ) -> str:
         """JSON text for a key-free request URL: from the cache, or fetched and cached."""
         sha = hashlib.sha256(url.encode("utf-8")).hexdigest()
         path = cache_dir / f"{sha}.json"
         if path.exists() and not self._refresh:
             logger.info("cache hit for %s", url)
             return path.read_text(encoding="utf-8")
-        text = self._request(url)
+        text = self._request(url, with_key=with_key, expect=expect)
         cache_dir.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".part")
         tmp.write_text(text, encoding="utf-8")
@@ -234,9 +252,9 @@ class CensusClient:
                 self._sleeper(wait)
         self._last = self._clock()
 
-    def _request(self, url: str) -> str:
+    def _request(self, url: str, *, with_key: bool = True, expect: str = "rows") -> str:
         """GET with retries. Errors are raised outside ``except`` blocks, so none is chained."""
-        full = f"{url}&key={self.__key}"
+        full = f"{url}&key={self.__key}" if with_key else url
         detail = ""
         for attempt in range(MAX_ATTEMPTS):
             self._pace()
@@ -256,7 +274,7 @@ class CensusClient:
                 detail = failure[0]
             else:
                 assert response is not None
-                outcome = self._judge(response.status_code, response.text)
+                outcome = self._judge(response.status_code, response.text, expect)
                 if outcome[0] == "ok":
                     return outcome[1]
                 detail = outcome[1]
@@ -268,7 +286,7 @@ class CensusClient:
             self._clean(_UNREACHABLE_MESSAGE.format(attempts=MAX_ATTEMPTS, detail=detail))
         )
 
-    def _judge(self, status: int, body: str) -> tuple[str, str]:
+    def _judge(self, status: int, body: str, expect: str = "rows") -> tuple[str, str]:
         """("ok", text) or ("retry", detail); raises for errors that must not be retried."""
         if status == 200:
             try:
@@ -280,6 +298,10 @@ class CensusClient:
                 not_json = False
             if not_json:  # an HTML error page: how the API answers an invalid or unactivated key
                 raise RejectedKeyError(REJECTED_KEY_MESSAGE)
+            if expect == "object":
+                if not isinstance(parsed, dict) or not isinstance(parsed.get("variables"), dict):
+                    raise CensusApiError(self._clean(f"Unexpected metadata response: {body[:200]}"))
+                return "ok", body
             if isinstance(parsed, dict) or not isinstance(parsed, list) or not parsed:
                 raise CensusApiError(self._clean(f"Unexpected Census API response: {body[:200]}"))
             if not isinstance(parsed[0], list):

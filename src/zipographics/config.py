@@ -5,6 +5,9 @@ Thresholds that counsel or the owner may want to change live here, in one place.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 #: Maximum distinct valid ZIPs per run (SPEC §5.2, D1).
 MAX_ZIPS = 1000
 
@@ -29,3 +32,21 @@ CV_CAUTION = 30.0
 
 #: z-score for a 90 % margin of error: SE = MOE / 1.645 (ACS General Handbook, formula 2).
 Z90 = 1.645
+
+#: Data build (SPEC §4.4). The ACS vintage is a build parameter; this is only its default.
+DEFAULT_VINTAGE = 2024
+#: A build with fewer ZCTA rows than this is rejected (about 33,800 exist in the 50 states, DC, PR).
+MIN_ZCTA_ROWS = 33_000
+#: A core KPI variable must be non-null for at least this share of ZCTAs with population > 0.
+COVERAGE_FLOOR = 0.95
+#: Metrics every dashboard leads with (SPEC §5.5); their variables are held to COVERAGE_FLOOR.
+CORE_METRICS = ("pop", "hh", "median_hh_income", "owner", "hh_kids")
+#: Environment variable naming Zipcator's built ``zcta.parquet`` to reuse for the map (D6).
+ZIPCATOR_PARQUET_ENV = "ZIPOGRAPHICS_ZIPCATOR_PARQUET"
+DATA_DIR_ENV = "ZIPOGRAPHICS_DATA_DIR"
+
+
+def data_dir() -> Path:
+    """The folder holding the built artifacts: ``$ZIPOGRAPHICS_DATA_DIR`` or ``<repo>/data``."""
+    override = os.environ.get(DATA_DIR_ENV, "").strip()
+    return Path(override) if override else Path(__file__).resolve().parents[2] / "data"

@@ -675,3 +675,35 @@ signatures has a policy parameter). Functions with no Analysis (`lenses.availabl
 `export.ad_platform_notice`) keep their `policy` argument and fail closed on `None`. Cost: about 130 test call
 sites updated; tests are parametrized over every guarded function, three kinds of restricted analysis (forced,
 answered, a restricted industry with a permissive flag) and every metric (`tests/unit/test_restricted_guards.py`).
+
+### Phase 6 (2026-11-10): the Streamlit app
+
+**P12. App decisions** (SPEC §5.2-5.7; Streamlit 1.67, folium 0.20, streamlit-folium 0.27, Altair 6).
+1. **Layout and wiring only.** `app/streamlit_app.py` draws widgets; `flow.py` (step gating, benchmark choices,
+   rule input conversion, sort choices), `kpis.py`, `table.build_view`, `charts.altair_chart/table_frame`,
+   `mapview.layer` and the exports hold the logic and are unit-tested. The app imports no network or key code
+   (an AppTest-suite test parses the file's imports and checks it never touches the key or `os.environ`).
+2. **Restricted table = `st.table`.** `st.dataframe` has no way to turn off sortable headers in Streamlit 1.67,
+   so restricted mode renders the static `st.table` (input order, "As entered / By ZIP" radio, no Index radio).
+   Unrestricted uses `st.dataframe` with column-header help text. **Per-cell tooltips are not possible in
+   `st.dataframe`**; the legend under the table, header help and the "Why are some values grey?" expander
+   (every unreliable cell with estimate, margin and CV) carry the explanation instead.
+3. **Input source = a radio, not tabs** ("Paste or type" / "Upload CSV"): with `st.tabs` both inputs exist in
+   the script and the app cannot tell which one the user meant; a radio also keeps AppTest simple.
+4. **State survives Back** through a plain `form` dict in `st.session_state`, because Streamlit discards the
+   state of widgets that are not drawn in a run. Changing the industry clears the old answer.
+5. **Report on demand.** The report takes 1-2 s (matplotlib), so it is built when "Prepare the summary
+   report" is pressed, then offered as a download; the ZIP list and CSV downloads are built on every run.
+6. **Map:** folium `GeoJson` fed by `mapview.layer` (tooltips are the layer's HTML); tiles load in the
+   user's browser from OpenStreetMap, the server makes no request. The legend is drawn with Markdown
+   swatches. `use_container_width` is deprecated in 1.67, so `width="stretch"` is used.
+7. **Streamlit config** (`.streamlit/config.toml`): usage statistics off, 5 MB upload limit, minimal toolbar.
+8. **The `visual` suite** (`tests/visual`, Playwright + Chromium, real `data/`) drives golden scenarios 1, 2, 5
+   and a filtered run and prints the report to PDF into `qa/screenshots/` (gitignored).
+9. **Restricted index on KPI cards stays** (P2): the trade-area cards are context, and show their index.
+
+**Found by looking at the screenshots (all fixed with tests; QA report bugs 42-46):** the Altair charts used a
+fixed pixel height and collapsed to about 40 px with overlapping bars (now a Step height per category); the
+restricted-mode map polygons were invisible (pale grey with white outlines on light street tiles; now a mid-grey
+fill with a dark outline); the Overlap % column showed 96.0737 (now one decimal, "<0.1" for slivers); report chart
+legends covered bar labels (now below the plot); the comma-separated ZIP box was cut off (now wraps).

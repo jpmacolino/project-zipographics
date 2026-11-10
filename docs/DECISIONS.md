@@ -604,8 +604,8 @@ rule never matches a coded value. Display: `"$250,000+"`, `"$2,500 or less"`, `"
 percent/fraction mix-up cannot silently select nothing. Counts have no index; at most 6 rules.
 
 **P5. `age_25_44` added to the registry** (Appendix D's Hospitality lens needs "25-44 (25-34 + 35-44)"). It
-sums existing B01001 cells, so no new Census variable and no rebuild is needed (87 -> 86 metric IDs counted
-in the unit test: 74 + 11 chart categories + 1).
+sums existing B01001 cells, so no new Census variable and no rebuild is needed (86 metrics:
+74 of Appendix C + 11 chart categories + 1).
 
 **P6. CSV conventions** (SPEC §5.6 leaves these open). Shares are written as percentages (0-100) in a column
 headed `Name (%)`; dollars, counts and years as plain numbers; unknown values are blank, never 0; a coded

@@ -28,6 +28,9 @@ dependencies = [
     "python-dotenv>=1.0",
 ]
 
+[project.scripts]
+zipographics = "zipographics.cli:run"
+
 [dependency-groups]
 dev = [
     "pytest>=8",

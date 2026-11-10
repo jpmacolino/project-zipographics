@@ -38,6 +38,9 @@ def run(art=ART, text="33602 33606 33603 33604", policy=OFF):  # type: ignore[no
     return an.analyze(art, parse_paste(text), policy)
 
 
+SHARED = run()  # built once: the every-metric tests below only read it
+
+
 def rule(metric: str, op: str, value: float, basis: str = "value") -> Rule:
     return Rule(metric, op, value, basis)  # type: ignore[arg-type]
 
@@ -159,7 +162,7 @@ def test_rules_read_naturally() -> None:
 def test_restricted_mode_refuses_a_rule_on_every_metric(
     metric: str, policy: UsePolicy | None
 ) -> None:
-    a = run()
+    a = SHARED
     basis = "index" if metrics.BY_ID[metric].indexable else "value"
     for b in ("value", basis):
         with pytest.raises(RestrictedUseError):
@@ -218,7 +221,7 @@ def test_ordering_is_stable_for_ties() -> None:
 def test_restricted_mode_refuses_ordering_by_every_metric(
     metric: str, policy: UsePolicy | None
 ) -> None:
-    a = run()
+    a = SHARED
     with pytest.raises(RestrictedUseError):
         table.order(a, metric, policy)
     with pytest.raises(RestrictedUseError):

@@ -16,7 +16,7 @@ from synth_frame import empty_frame
 from zipographics import data
 
 #: household-income brackets B19001_002..017 as shares of households (sum 1.0); median about $62k
-_BRACKET_SHAPE = [0.04, 0.03, 0.03, 0.03, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.08, 0.12, 0.17,
+_BRACKET_SHAPE = [0.04, 0.03, 0.03, 0.03, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.08, 0.12, 0.21,
                   0.11, 0.07, 0.04]  # fmt: skip
 
 

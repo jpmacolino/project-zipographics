@@ -570,3 +570,59 @@ ZCTAs, 3,222 counties, 52 states, the nation. Every number below is from the rea
 **Not changed, by design:** a ZCTA with population but no households (355 group-quarters ZCTAs) stays in the
 data; `33601` is not a ZCTA (checked: absent from the profile); population totals of the 33,772 ZCTAs are
 within 3 % of the national figure (ZCTAs approximate the 50 states, DC and PR).
+
+### Phase 5 (2026-11-10): verticals, restricted, lenses, analysis, filters, export, report, CLI
+
+**P1. Modules beyond SPEC §8** (all logic still in `src/zipographics`; nothing UI-specific):
+`analysis.py` (one `Analysis` object: review summary, trade-area and benchmark profiles, indexes, per-ZIP
+table, lens; the app, exports, report and CLI all start from it, so they cannot disagree), `table.py`
+(`table.order`, named in §5.7), `charts.py` (chart *data* only: pulled forward from Phase 6 because the
+report needs it; Altair rendering stays in the app), `ui.py` (display formatting; no Streamlit import).
+SPEC §5.7 names `presets.for_lens(lens, policy)`; it is `lenses.presets_for(lens, policy)` and
+`lenses.preset(name, policy)` (presets live with the lenses, per Appendix D "thresholds live in lenses.py").
+
+**P2. Restricted mode is enforced in the library and fails closed.** `restricted.require_unrestricted(policy,
+action)` raises `RestrictedUseError` when the policy is restricted **or missing**. `filters.apply` refuses any
+non-empty rule list before validating it (parametrized over every one of the 86 metrics, value and index
+basis, three policies); `table.order` refuses every metric key (only `input` and `zip` are allowed);
+`lenses.available` returns Context only, `presets_for` returns `[]`, `lenses.preset` raises;
+`export.zip_list` returns exactly the input ZIPs (it ignores `qualifying` and `include_not_found`);
+`csv_text` and `report.render` raise when given a filter result with rules and otherwise write input order, no
+Qualifies column and **no per-ZIP index columns** (per-ZIP index exists to rank and select; the trade-area
+KPI cards keep their index because they are context, not selection). An empty rule list selects nothing and
+is allowed.
+
+**P3. Coded medians compare as bounds.** The API stores a coded median shifted by one from its published
+bound (250,001 for "$250,000+", 2,499 for "$2,500-", 1938 for "1939 or earlier"; V7), so
+`stats.coded_bound` gives bound = stored - 1 for top codes and stored + 1 for bottom codes. A top-coded
+median satisfies `>= v` when its bound is `>= v`; for `<= v` it never qualifies, and is "uncertain" (recorded
+in `ZipMatch.uncertain`) when its bound is `<= v`, a plain miss otherwise. Bottom codes mirror that. An index
+rule never matches a coded value. Display: `"$250,000+"`, `"$2,500 or less"`, `"1939 or earlier"`,
+`"2020 or later"` (`ui.fmt_value`).
+
+**P4. Filter rule values.** Shares are fractions (0.6 = 60 %); `filters.validate` rejects 60 for a share so a
+percent/fraction mix-up cannot silently select nothing. Counts have no index; at most 6 rules.
+
+**P5. `age_25_44` added to the registry** (Appendix D's Hospitality lens needs "25-44 (25-34 + 35-44)"). It
+sums existing B01001 cells, so no new Census variable and no rebuild is needed (87 -> 86 metric IDs counted
+in the unit test: 74 + 11 chart categories + 1).
+
+**P6. CSV conventions** (SPEC §5.6 leaves these open). Shares are written as percentages (0-100) in a column
+headed `Name (%)`; dollars, counts and years as plain numbers; unknown values are blank, never 0; a coded
+median is written from its bound as text (`250000+`, `2500-`) with no MOE or index, and the footer explains
+the trailing `+`/`-`. Per metric: value, `MOE`, `reliability` (Reliable / Use with caution / Unreliable),
+`index`. The Trade area and Benchmark rows put their label in the City column so the ZIP column stays pure
+ZIPs. The Qualifies column says `Yes`, `No` or `Yes (unreliable estimate)`. Excel variant: UTF-8 BOM and ZIP
+cells written as `="02108"` inside `QUOTE_NONNUMERIC` quoting (the form Zipcator writes).
+
+**P7. Report.** One HTML string: inline SVG from matplotlib (Agg, `svg.fonttype = none`, fixed hash salt so
+output is deterministic), XML prolog, doctype, comments, metadata and `xmlns` stripped. The map uses
+quantile-binned fills with a **vector patch legend** (matplotlib's colorbar embeds a PNG data URI, which the
+"no external resources" test rightly rejects). The only `http(s)` text is the three links in the Sources
+section. Restricted: banner, neutral fill, no filter section, input order.
+
+**P8. CLI** (`zipographics profile ...`, also `python -m`-free console script). Exit codes: 0 ok, 2 usage,
+3 data not built, 4 input cannot be profiled, 5 output not writable. `--restricted` is required unless the
+vertical is restricted; a restricted vertical ignores `--restricted no`; no `--vertical` means "Other".
+`--vertical` accepts a unique fragment. Output streams are switched to `errors="replace"`: running the CLI on
+the real data crashed on a Windows (cp1252) console at the first "->" arrow in the review line (QA bug 33).

@@ -562,3 +562,114 @@ def test_single_column_csv_roundtrip_preserves_zips(zs: list[str]) -> None:
     assert list(p.zips) == list(dict.fromkeys(zs))
     assert p.duplicates == len(zs) - len(set(zs))
     assert all(isinstance(z, str) and len(z) == 5 for z in p.zips)
+
+
+# ----------------------------------------------------------------- QA phase 1 regressions
+def test_header_less_multi_column_file_keeps_its_first_zip() -> None:
+    # QA #1: row 1 was always treated as a header, silently dropping the first ZIP
+    p = import_csv(csv_bytes("02108,Boston\n02109,Boston\n02110,Boston\n"))
+    assert p.zips == ("02108", "02109", "02110")
+    assert p.zip_column == "Column 1"
+    assert p.detected_by == "content"
+
+
+def test_header_less_multi_column_file_with_mangled_zips() -> None:
+    p = import_csv(csv_bytes("2108,Boston\n2109,Boston\n"))
+    assert p.zips == ("02108", "02109")
+    assert [t.raw for t in p.repaired] == ["2108", "2109"]
+
+
+def test_header_less_file_with_the_zip_in_a_later_column() -> None:
+    p = import_csv(csv_bytes("Boston,02108\nBoston,02109\n"))
+    assert p.zips == ("02108", "02109")
+    assert p.zip_column == "Column 2"
+    assert import_csv(csv_bytes("Boston,02108\nBoston,02109\n"), zip_column="Column 2").zips == (
+        "02108",
+        "02109",
+    )
+
+
+def test_a_file_with_a_real_header_is_not_mistaken_for_header_less() -> None:
+    p = import_csv(csv_bytes("Name,Where\nAcme,02108\nBeta,33602\n"))
+    assert p.zips == ("02108", "33602")
+    assert p.zip_column == "Where"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("02108, 02109, 02110", ["02108", "02109", "02110"]),  # one line, comma separated
+        ("02108,02109\n02110,02111", ["02108", "02109", "02110", "02111"]),  # several per line
+        ("02108 02109 02110", ["02108", "02109", "02110"]),  # space separated .txt
+        ("02108 02109\n02110 02111\n", ["02108", "02109", "02110", "02111"]),
+        ("02108|02109\n02110|02111", ["02108", "02109", "02110", "02111"]),  # pipes
+        ("2108;2109;2110", ["02108", "02109", "02110"]),  # semicolons, mangled
+    ],
+)
+def test_zip_lists_in_any_layout_are_accepted(text: str, expected: list[str]) -> None:
+    # QA #2: .txt files of ZIPs on one line or several per line failed or offered ZIP values
+    # as column names
+    p = import_csv(csv_bytes(text))
+    assert list(p.zips) == expected
+    assert p.invalid == ()
+    assert p.source == "csv"
+
+
+def test_a_header_then_a_space_separated_line_is_still_a_header_file() -> None:
+    p = import_csv(csv_bytes("ZIP\n02108 02109\n"))
+    assert p.zips == ("02108", "02109")
+
+
+def test_blank_overlap_then_a_value_on_a_repeat_is_a_conflict() -> None:
+    p = import_csv(zc("02108,,No\n02108,20,No\n"))
+    assert p.blank_overlap == ("02108",)
+    assert p.overlap_conflicts == ("02108",)
+    assert p.overlaps == {}  # the first row (blank) wins
+
+
+@pytest.mark.parametrize(
+    ("raw", "fragment"),
+    [("-5", "above 0"), ("0", "above 0"), ("101", "above 0"), ("abc", "not a number")],
+)
+def test_overlap_rejection_reasons(raw: str, fragment: str) -> None:
+    p = import_csv(zc(f"02108,50,No\n02109,{raw},No\n"))
+    assert fragment in p.rejected_rows[0].reason
+
+
+def test_whitespace_around_an_invalid_cell_is_not_listed() -> None:
+    assert import_csv(csv_bytes("ZIP\n02108\n  abc  \n")).invalid == ("abc",)
+
+
+def test_a_pathological_token_is_rejected_quickly() -> None:
+    import time
+
+    from zipographics.zips import normalize_token
+
+    start = time.perf_counter()
+    assert normalize_token('="' * 300_000).status == "invalid"
+    assert normalize_token("=" * 500_000).status == "invalid"
+    assert time.perf_counter() - start < 1.0
+
+
+def test_low_overlap_keeps_full_precision() -> None:
+    # 02445 shows as 0.1 in the CLI table (display floor); the CSV holds the real value, which
+    # `cmp` against a fresh `zipcator` run confirmed is reproducible
+    p = import_csv(read("boston_3mi.csv"))
+    assert p.overlaps["02445"] == pytest.approx(0.006514, abs=1e-6)
+
+
+def test_content_detection_threshold_is_80_percent_not_70() -> None:
+    rows = "\n".join(["A,02108", "B,33602", "C,02110", "D,junk"])  # 3 of 4 = 75 %
+    with pytest.raises(ImportFileError, match="ZIP column"):
+        import_csv(csv_bytes("Name,Where\n" + rows + "\n"))
+
+
+def test_cp1252_only_characters_decode_as_cp1252_not_latin1() -> None:
+    data = b"ZIP,City\r\n00667,Caf\x80\x93x\x94\r\n"  # euro sign and curly quotes
+    assert "Caf\N{EURO SIGN}" in decode_bytes(data)
+    assert import_csv(data).zips == ("00667",)
+
+
+def test_utf16_big_endian_bom() -> None:
+    data = b"\xfe\xff" + "ZIP\r\n02108\r\n02109\r\n".encode("utf-16-be")
+    assert import_csv(data).zips == ("02108", "02109")

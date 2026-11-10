@@ -1,0 +1,4 @@
+﻿"ZIP","City","County","State","Overlap %","Area in radius (sq mi)","ZIP area (sq mi)","Nearest distance (mi)","Center distance (mi)","Contains address","Population","Est. pop in radius"
+"=""02108""","City 02108","County 02108","FL",100.0,1.544409,1.544409,0.0,0.077646,"Yes",3500,3500
+"=""00501""","Mayagüez, ""Quoted""","County 00501","FL",100.0,3.474919,3.474919,2.636255,3.954343,"No",600,600
+"=""33602""","City 33602","County 33602","FL",2.806595,4.33453,154.440863,8.699207,16.153311,"No",10000,281

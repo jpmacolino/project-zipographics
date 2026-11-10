@@ -194,3 +194,18 @@ wide internal use.
 **B1 (2026-11-09). `uv` is installed but not on the Git Bash PATH.** `uv` 0.13.5 lives in
 `C:\Users\<user>\.local\bin`. Claude Code's Bash tool needs `export PATH="$HOME/.local/bin:$PATH"`
 per command; the installer was not needed (and failed harmlessly because `uv.exe` was in use).
+
+**B2 (2026-11-09). Contract fixtures are `-text` in `.gitattributes`.** The repo default
+`* text=auto eol=lf` would rewrite the CRLF line endings of `tests/fixtures/zipcator/*.csv` on
+commit, so a Windows and a Linux checkout would test different bytes than Zipcator writes. Added
+`tests/fixtures/zipcator/*.csv -text`; verified with `git ls-files --eol` (index holds `crlf`).
+Alternative: a `.gitattributes` inside the fixtures folder; rejected to keep one file.
+
+**B3 (2026-11-09). Fixtures were generated with Zipcator's real CLI at commit `6d9ad8a`** (clean
+tree, no network). Zipcator's printed table and `--zips` list are the independent source for the
+expected ZIPs in the importer tests. The with-population shape is Zipcator's own `csv_bytes` on a
+synthetic result (labeled synthetic in `tests/fixtures/zipcator/README.md`). Excel re-saves are
+simulated by `make_variants.py`; none is a real Excel file yet (the Phase 6 STOP asks the owner for
+one). One observation for the importer: in the Excel-safe file the raw bytes of a ZIP cell are
+`"=""33602"""`, which a CSV reader turns into `="33602"`; the token cleaner also accepts the raw
+doubled-quote form (a user pasting lines from the file).

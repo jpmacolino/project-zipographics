@@ -2,3 +2,6 @@
 *.png binary
 *.parquet binary
 *.zip binary
+
+# Contract fixtures are byte-exact: CRLF, BOMs, cp1252. Never normalize them.
+tests/fixtures/zipcator/*.csv -text

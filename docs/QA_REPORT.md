@@ -35,6 +35,15 @@ fixed, golden-scenario verification, SPEC §10 checklist)._
 | 21 | 3 | Validation gaps: duplicate geometry ZIPs accepted; a map covering 1 of 6 ZIPs accepted; `--only geo` with no profile skipped all geometry checks (a null geometry was written, exit 0); `inf`/`1e400` reached the parquet and `-inf` crashed; unparseable text silently became null | Checks only ran with a profile; no finite check | `geometry_problems` (duplicates, nulls, coverage ≥ 95 %) always runs; non-finite values become nulls and are counted (`non_finite`, `non_numeric`) | `test_geometry_checks_apply_even_without_a_profile`, `test_duplicate_geometry_zips_fail`, `test_a_truncated_map_fails_against_the_profile`, `test_non_finite_numbers_become_null_and_are_counted`, `test_non_numeric_text_is_counted_but_blanks_are_not` |
 | 22 | 3 | A UTF-16 `.env` (PowerShell 5.1 `echo > .env`) crashed with a traceback; a blank `CENSUS_API_KEY` in the environment hid the key in the file; `--tolerance nan/-1`, `--vintage -5`, `--data-dir <file>` were accepted or crashed; the secrets gate missed bare 40-hex constants, `api_key:` forms, upper-case `KEY=`, `key%3D`, `prod.env`, `.envrc` | Unhandled decode error; `override=False` treats an empty variable as set; no argument validation; narrow gate patterns | UTF-8 message (exit 3); blank counts as unset; validated arguments (exit 2); gate patterns and `.gitignore` widened (tests use a throwaway git repo) | `test_a_utf16_dotenv_gets_a_clear_message_not_a_traceback`, `test_a_blank_real_variable_does_not_hide_the_key_in_the_dotenv_file`, `test_nonsense_numeric_arguments_are_usage_errors`, `tests/unit/test_secrets_gate.py` |
 | 23 | 3 | The import-graph tests could be bypassed by a relative import or `importlib.import_module("...")`, and did not ban network modules in runtime files | AST check ignored `node.level` and dynamic imports | Scanner resolves relative imports and literal `import_module`/`__import__`; runtime files may not import `requests`, `urllib3`, `socket`, `http.client` | `test_the_violation_scanner_catches_relative_and_dynamic_imports`, `test_runtime_modules_have_no_forbidden_or_network_imports` |
+| 24 | 4 | exit 5: median household income non-null for 92.1 % of ZCTAs with population (< 95 %) | the ACS suppresses published medians for small areas; the spec floor assumed about 100 % | separate 90 % floor for published medians (DECISIONS B16.1) | `test_published_medians_have_their_own_ninety_percent_floor`, `test_a_median_below_ninety_percent_still_fails`, `test_counts_and_shares_keep_the_ninety_five_percent_floor` |
+| 25 | 4 | exit 5: no county benchmark for `09001`... (Connecticut) | ACS 2022+ uses planning regions; the 2020 relationship file uses legacy counties | CT ZCTAs keep the county name but not the FIPS; limit 2 %; recorded in metadata (B16.2) | `test_a_county_without_an_acs_row_keeps_its_name_but_loses_its_fips` and 3 more in `test_realdata_rules.py` |
+| 26 | 4 | exit 5: geometry has ZIPs with no profile row (`00802`, `00820`...) | the boundary file includes 19 ZCTAs the ACS does not publish | dropped from the map, recorded; more than 25 fails (B16.3) | `test_polygons_without_a_profile_row_are_dropped_and_recorded`, `test_a_boundary_file_with_many_unmatched_polygons_is_rejected` |
+| 27 | 4 | pandas `PerformanceWarning` (fragmented frame) on every level | `out[col] = ...` inserted about 450 columns one at a time | columns built at once | `test_cleaning_hundreds_of_variables_does_not_fragment_the_frame` |
+| 28 | 4 | map 43 MB at tolerance 0.002 (target about 30 MB) | default tolerance too fine for a map-only layer | default 0.004 gives 25 MB (measured 5 values, B16.4) | `test_the_map_covers_the_profile_within_the_size_target` (data) |
+| 29 | 4 | Trade-area shares biased low: a ZIP with a denominator but no numerator (14 % of ZCTAs for B25046) added to the denominator only (600 / 2,000 instead of 600 / 1,000) | sums were taken per cell, independently | paired-ZIP rule (`profile._paired`): such a ZIP leaves both sums and the result is flagged `incomplete` (B17.1) | `tests/unit/test_phase4_regressions.py` (7 tests) |
+| 30 | 4 | The data tests and `validate_artifacts` passed on corrupted artifacts (all `_code` set to "none", owner/renter swapped, a column scaled, shuffled map ZIPs, relabelled CRS, null national benchmark cell, wholly null non-core variable, county gaps anywhere under 2 %) | checks only on core variables, plausibility bands and counts | 50 % floor for every variable; non-null national/state benchmark rows; cross-table totals; EPSG:4326 and text ZIPs; Connecticut-only county gaps; loader type checks; independent raw-cache re-parse, point-in-polygon and literal-value data tests | `tests/unit/test_validation_hardening.py` (26 tests), `tests/integration/test_artifact_integrity.py` (29 data tests); 8 mutants, all caught (see Phase 4 below) |
+| 31 | 4 | A live test said B25046 was 97 % non-null (truth 86.4 %), which wrongly moved `veh_per_hh` to B25046 | the helper compared `astype(str)` to "None"/"nan"; pandas 3 nulls print as `<NA>` | helper uses `pd.to_numeric` and a sentinel threshold; B25046 reverted to B25044 (B17.2) | `test_b25046_aggregate_vehicles_exists_at_zcta_level_but_is_incomplete` (network), `test_vehicles_per_household_is_the_b25044_weighted_count_labeled_at_least` |
+| 32 | 4 | JSON null cells (1,363 estimates, 1,363 margins) were not counted in `metadata.json` | `_numeric` counted only unparseable text | `estimate:null` / `moe:null` counts | `test_json_nulls_are_counted_separately_from_sentinels`, `test_non_numeric_text_and_blanks_are_counted_separately` |
 
 ## Golden scenarios: independent verification
 
@@ -104,7 +113,7 @@ agree on 20,000 random draws. 76 hand-made mutants: most killed; the survivors a
 | L6 | LOW | benchmark options robustness | **Fixed** (bug 14) |
 | L7 | LOW | wrong test file named in D8 | **Fixed** |
 | L8 | LOW | DP regexes unanchored | **Fixed** (bug 12) |
-| L9 | LOW | shares biased low when a numerator is wholly null; mean vs per-capita handle null differently; a zero-household ZIP flips a median from published to interpolated; one null bracket MOE makes a trade-area median MOE unreliable | **Deferred to Phase 4**: measure how often it happens in real data; all cases are flagged `incomplete` |
+| L9 | LOW | shares biased low when a numerator is wholly null; mean vs per-capita handle null differently; a zero-household ZIP flips a median from published to interpolated; one null bracket MOE makes a trade-area median MOE unreliable | **Closed in Phase 4** for shares and ratios (paired-ZIP rule, bug 29, B17.1); the median cases stay flagged `incomplete` |
 | L10 | LOW | in-radius per-ZIP columns, per-ZIP index tier | **Deferred to Phase 5/6** (UI/export layer) |
 | L11 | LOW | display text "1939 or earlier" for the 1940 bound | **Deferred to Phase 5/6** (formatting) |
 | L12 | LOW | FIPS test spot-checks 3 of 52 (reviewer verified all 52); NaN input to scalar helpers | **Accepted** |
@@ -149,21 +158,29 @@ extras scrubbing, makeRecord hook, benchmark column slice, non-atomic publish, m
 interrupt exit code, blank-env override, infinite values).
 
 ### Phase 4: real data build (2026-11-09/10)
-Gates: ruff, format, mypy, size and secrets pass; **902 default tests** and **18 `data` tests** pass; the
-3 default-skipped live `network` tests plus 2 new ones were run once and pass (key accepted; the real
-registry resolves against the real `variables.json`; B25046 and B02001 available at ZCTA level).
+First real build and an independent `qa-reviewer` (fresh context; told not to touch `.env`). **What held up:**
+every published cell matched the reviewer's own re-parse of the API responses (0 mismatches over a sample),
+no leading zero lost, no key in any file, all variables resolved with unchanged labels.
 
-| bug # | symptom (first real build) | root cause | fix | regression test |
-|---|---|---|---|---|
-| 24 | exit 5: median household income non-null for 92.1 % of ZCTAs with population (< 95 %) | the ACS suppresses published medians for small areas; the spec floor assumed ≈ 100 % | separate 90 % floor for published medians (DECISIONS B16.1) | `test_published_medians_have_their_own_ninety_percent_floor`, `test_a_median_below_ninety_percent_still_fails`, `test_counts_and_shares_keep_the_ninety_five_percent_floor` |
-| 25 | exit 5: no county benchmark for `09001`... (Connecticut) | ACS 2022+ uses planning regions; the 2020 relationship file uses legacy counties | CT ZCTAs keep the county name but not the FIPS; limit 2 %; recorded in metadata (B16.2) | `test_a_county_without_an_acs_row_keeps_its_name_but_loses_its_fips` and 3 more in `test_realdata_rules.py` |
-| 26 | exit 5: geometry has ZIPs with no profile row (`00802`, `00820`...) | the boundary file includes 19 ZCTAs the ACS does not publish | dropped from the map, recorded; > 25 fails (B16.3) | `test_polygons_without_a_profile_row_are_dropped_and_recorded`, `test_a_boundary_file_with_many_unmatched_polygons_is_rejected` |
-| 27 | pandas `PerformanceWarning` (fragmented frame) on every level | `out[col] = ...` inserted about 450 columns one at a time | columns built at once | `test_cleaning_hundreds_of_variables_does_not_fragment_the_frame` |
-| 28 | map 43 MB at tolerance 0.002 (target ≈ 30 MB) | default tolerance too fine for a map-only layer | default 0.004 → 25 MB (measured 5 values, B16.4) | `test_the_map_covers_the_profile_within_the_size_target` (data) |
+| # | severity | finding | handling |
+|---|---|---|---|
+| 1 | HIGH | shares biased low when one ZIP lacks a numerator but has its denominator (B25046: 14 % of ZCTAs) | **Fixed** (bug 29, DECISIONS B17.1); this also closes Phase 2 L9 for shares and ratios |
+| 2 | HIGH (tests) | corrupted artifacts passed the data tests and `validate_artifacts` | **Fixed** (bug 30). Eight corrupted copies of `data/` were run through `pytest -m data`: **all eight caught** (`_code` all "none"; owner/renter swapped; median income x10; home value x1.5, which no total can catch, so only the raw re-parse does; shuffled map ZIPs; relabelled CRS; null national benchmark cell; and MOE 0 turned into null, which **survived the first version** because a random 500-ZIP sample holds almost no controlled margins, so the sample is now stratified: all 13 ZCTAs with one, plus null-margin and null-estimate strata) |
+| 3 | MEDIUM | wrong B25046 coverage (97 % vs 86.4 %) and a stale "216 of 223" figure | **Fixed** (bug 31, DECISIONS V5/B17.2); current figures: 233 of 240 variables at 99 % or more |
+| 4 | MEDIUM | the lens charts of Appendix D need cells the registry lacked (units in structure, tenure by move-in, vehicles available) | **Decided** (B17.3): 18 variables and 11 metrics added; each group partitions its table exactly once (`tests/unit/test_chart_cells.py`). Appendix C is extended: owner to be told |
+| 5 | LOW | county gaps tolerated anywhere under 2 %; map CRS and ZIP type unchecked; loader did not check text ids | **Fixed** (bug 30) |
+| 6 | LOW | stale numbers in DECISIONS (V6, households under 10) | **Fixed**: recomputed from the final build |
+| 7 | INFO | map simplification distorts small urban ZIPs; two NY ZCTAs have no ACS data | **Disclosed**: metadata note, DECISIONS B17.6-7 |
 
-Measured on the real data (not snapshots; recorded here as required by SPEC §6.4/§9.3): published vs
-interpolated median household income, 1,489 sampled ZCTAs: median gap **1.22 %**, p95 **5.99 %**, max 17.2 %;
-interpolated MOE / published MOE: median **1.14**, p10 0.79, p90 1.77. Coverage: 216 of 223 variables ≥ 99 %;
-lowest: gross rent 77.6 %, home value 91.2 %, median income 92.1 %, mean income 96.2 %, year built 97.0 %,
-per capita income 98.5 %, median age 98.9 % (all published medians/means suppressed for small areas).
-Sentinels, top/bottom codes, label resolution and the 5-year notes page: DECISIONS "Phase 4".
+Gates after triage: ruff, format, mypy, size and secrets pass; **939 default tests** (coverage **97.85 %**,
+line + branch), **47 `data` tests** (18 earlier + 29 new) pass on the rebuilt data; the 5 `network` tests
+passed on the earlier build (key accepted; the registry resolved against the real `variables.json`) and are
+re-run after this triage: 5 passed.
+
+Measured on the real data (not snapshots; SPEC section 6.4/9.3): published vs interpolated median household
+income, 1,489 sampled ZCTAs: median gap **1.22 %**, p95 **5.99 %**, max 17.2 %; interpolated MOE / published
+MOE: median **1.14**, p10 0.79, p90 1.77. Coverage among ZCTAs with population (33,174 of 33,772): **233 of
+240 variables at 99 % or more**; lowest: gross rent 77.6 %, home value 91.2 %, median income 92.1 %, mean
+income 96.2 %, year built 97.0 %, per capita income 98.5 %, median age 98.9 % (published medians and means
+are suppressed for small areas). Sentinels, top/bottom codes, label resolution and the 5-year notes page:
+DECISIONS "Phase 4".

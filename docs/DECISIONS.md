@@ -476,8 +476,8 @@ declares 74 metrics (Appendix C) over about 270 Census variables.
 
 ### Phase 4 (2026-11-09/10): the real build, and what it verified
 
-First real run: ACS 2020-2024 5-year (`--vintage 2024`), 223 then 222 variables, 33,772 ZCTAs,
-3,222 counties, 52 states, the nation. Every number below is from the real data or the official sources.
+First real run: ACS 2020-2024 5-year (`--vintage 2024`), 240 variables after the QA triage (B17), 33,772
+ZCTAs, 3,222 counties, 52 states, the nation. Every number below is from the real data or the official sources.
 
 **Verified facts (updating V1-V13)**
 - **V1 (vintage).** `api.census.gov/data/2025/acs/acs5` is still HTTP 404 on 2026-11-10 (only the
@@ -486,9 +486,9 @@ First real run: ACS 2020-2024 5-year (`--vintage 2024`), 223 then 222 variables,
   `in=`) work as documented; the whole build is about 60 requests and took about 75 s with a warm cache.
 - **V5 (tables).** Every table in the registry exists in the 2024 dataset and resolved by ID with its
   label unchanged: **all variables resolved, none `moved`**. **B02001 (race) is available at ZCTA level
-  (100 % non-null). B25046 (aggregate vehicles) is available at ZCTA level (97 % non-null)**, so
-  `veh_per_hh` now uses B25046 / B25044_001 as SPEC §6.5 prefers (exact, no "at least" caveat); the two
-  B25044 one-vehicle cells it needed were dropped from the registry.
+  (100 % non-null). B25046 (aggregate vehicles) is available at ZCTA level but only 86.4 % non-null**
+  (corrected: an earlier note said 97 %, from a live-test helper that miscounted nulls under pandas 3). Too
+  sparse to lead with, so `veh_per_hh` stays on B25044 (B17).
 - **V6 (sentinels).** The **5-year notes page does not exist** (HTTP 404). The 5-year site
   ([acs-5year.html](https://www.census.gov/data/developers/data-sets/acs-5year.html), revised 2026-05-20) points
   to the 1-year notes page, revised 2026-07-20, whose table is exactly our six values plus
@@ -496,6 +496,7 @@ First real run: ACS 2020-2024 5-year (`--vintage 2024`), 223 then 222 variables,
   -333333333 `***`, -555555555 `*****`. **Observed in the real data:** `-666666666` only as an *estimate*
   (18,863 cells); `-222222222`, `-333333333` and `-555555555` only as *margins of error* (18,863, 2,053 and
   17,069); `-999999999` and `-888888888` never appeared in these tables. No unknown large negative value.
+  JSON `null` cells (1,363 estimates, 1,363 margins) are now counted too (`estimate:null`, `moe:null`).
 - **V7 (top/bottom codes).** Detected from the estimate annotation, whose real strings are `250,000+`,
   `2,500-`, `2,000,000+`, `10,000-`, `3,500+`, `100-`, `1939-`, `2020+` (and `-` for "not computable", which
   is not a code). Cross-check of the believed codes: median household income top 250,001 (118 ZCTAs),
@@ -517,8 +518,8 @@ First real run: ACS 2020-2024 5-year (`--vintage 2024`), 223 then 222 variables,
 **B16. Rules the real data forced (official-source conflicts; reported to the owner).**
 1. **Published medians get a 90 % coverage floor, not 95 %.** SPEC §4.4 says a core KPI variable must be
    non-null for 95 % of ZCTAs with population > 0. Real coverage of the published median household income is
-   **92.1 %**: the ACS suppresses medians for small areas (3 % of ZCTAs with under 10 households have one,
-   33 % of those with 10-24, 87 % of those with 100-249, 95 %+ above 250). It is not a broken join: counts and
+   **92.1 %**: the ACS suppresses medians for small areas (recomputed on the final build, ZCTAs with population: 3.3 % of those
+   with under 10 households have one, 33 % of those with 10-24, 68 % of 25-99, 87 % of 100-249, 99 % of 250+). It is not a broken join: counts and
    shares are 100 % and every null-median ZCTA still has its bracket counts. The spec floor stays 95 % for
    counts and shares; **published medians use `config.MEDIAN_COVERAGE_FLOOR = 0.90`**. Alternative the owner
    may prefer: keep 95 % and measure only ZCTAs with ≥ 100 households, or interpolate a suppressed single-ZIP
@@ -538,6 +539,33 @@ First real run: ACS 2020-2024 5-year (`--vintage 2024`), 223 then 222 variables,
    31 MB, 0.004 → 25 MB, 0.005 → 21 MB, 0.01 → 12 MB.
 5. **Artifacts:** `zcta_profile.parquet` 20 MB, `benchmarks.parquet` 3 MB, `zcta_geo.parquet` 25 MB;
    `data/raw` cache 201 MB (all gitignored).
+
+**B17. Phase 4 QA triage (independent reviewer; 2026-11-10).**
+1. **Ratios stay paired across ZIPs.** Real data showed a ZIP can lack a numerator while its denominator is
+   present (B25046: 14 % of ZCTAs). Summing the denominator but not the numerator biased trade-area shares
+   low. Rule (`profile._paired`): a ZIP missing the numerator entirely or the denominator entirely leaves
+   *both* sums and the result is flagged `incomplete`. Closes the Phase 2 L9 item for shares and ratios.
+   Medians were never affected (never summed); the remaining L9 cases stay flagged `incomplete`.
+2. **`veh_per_hh` stays on B25044** (weights 1-5, "5 or more" counted as 5, hence "at least"), not B25046,
+   which is only 86.4 % non-null at ZCTA level. SPEC §6.5 allows this fallback.
+3. **Registry extended beyond Appendix C** with the cells the lens charts of Appendix D need, because SPEC
+   §4.3 stores registry variables only: `units_2_4`, `units_5_19`, `units_20p`, `units_other` (B25024),
+   `movers_2`, `movers_3`, `movers_4`, `movers_older` (B25038 owner + renter), `veh_1`, `veh_2`, `veh_3p`
+   (B25044); each group partitions its table exactly once (tested). 85 metrics, 240 variables. **For the
+   owner:** this adds 18 variables and 11 metrics to Appendix C.
+4. **`new_movers` is "most recent period", not a fixed year.** The ACS moves its periods each vintage ("moved
+   in 2021 or later", now "2023 or later"); the UI must show the label stored in `metadata.json`.
+5. **Build validation now also requires:** 50 % non-null for *every* variable (core KPIs 95 %, published
+   medians 90 %); a value for every variable in the national and every state benchmark row; cross-table
+   totals that must agree (population B01003/B01001/B02001/B03003, households B11001 with B25003, B19001,
+   B25044, B25038, B28002, B11005; at most 0.5 % of ZCTAs may differ); map CRS EPSG:4326 and text ZIPs;
+   county gaps only in Connecticut (`config.COUNTY_GAP_STATES`).
+6. **Metadata discloses** `coverage_basis` (33,174 of 33,772 ZCTAs have population > 0) and a map note: the
+   boundaries are simplified (tolerance 0.004°, shared edges simplified once), 1,447 ZCTAs change area by more
+   than 10 %, small urban ZIPs can look visibly different; shapes are indicative, areas must not be computed
+   from them.
+7. **Flag for the owner:** two New York ZCTAs, `11717` and `11798`, are in the
+   2020 boundary file but not in the ACS 2020-2024 data and are dropped from the map (B16.3).
 
 **Not changed, by design:** a ZCTA with population but no households (355 group-quarters ZCTAs) stays in the
 data; `33601` is not a ZCTA (checked: absent from the profile); population totals of the 33,772 ZCTAs are

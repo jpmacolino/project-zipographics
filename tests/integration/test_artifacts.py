@@ -8,20 +8,19 @@ from __future__ import annotations
 import json
 import re
 import time
-from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
 
-from zipographics import data, metrics, profile, stats
+from zipographics import config, data, metrics, profile, stats
 from zipographics.data import facts_from_profile
 from zipographics.review import review_lines, summarize
 from zipographics.zips import parse_paste
 
 pytestmark = pytest.mark.data
-DATA = Path(__file__).resolve().parents[2] / "data"
+DATA = config.data_dir()
 
 if not (DATA / "zcta_profile.parquet").exists():  # pragma: no cover - only without a build
     pytest.skip("data/ has not been built (run scripts/build_data.py)", allow_module_level=True)

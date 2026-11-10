@@ -16,7 +16,7 @@ from collections.abc import Sequence
 
 from zipographics.config import MAX_UPLOAD_BYTES
 from zipographics.models import ColumnDetection, ParsedInput, RejectedRow
-from zipographics.zips import ZipCollector, normalize_token
+from zipographics.zips import ZipCollector, normalize_token, split_tokens
 
 _BOM = "\N{ZERO WIDTH NO-BREAK SPACE}"
 
@@ -27,6 +27,7 @@ _CONTENT_SHARE = 0.8
 _DELIMITERS = (",", ";", "\t")
 _SNIFF_ROWS = 20
 _OVERLAP_NUMBER = re.compile(r"[0-9]+(?:\.[0-9]*)?|\.[0-9]+")
+_SIGNED_NUMBER = re.compile(r"-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)")
 _COMMA_DECIMAL = re.compile(r"[0-9]+,[0-9]+")
 
 
@@ -131,7 +132,7 @@ def parse_overlap(raw: str) -> float | None:
 
 def overlap_problem(raw: str) -> str:
     """Why :func:`parse_overlap` rejected ``raw`` (for the review screen)."""
-    if _OVERLAP_NUMBER.fullmatch(_overlap_text(raw)):
+    if _SIGNED_NUMBER.fullmatch(_overlap_text(raw)):
         return "overlap must be above 0 and at most 100"
     return "overlap is not a number"
 
@@ -167,7 +168,7 @@ def import_csv(data: bytes, *, zip_column: str | None = None) -> ParsedInput:
         return _import_zipcator(header, rows[1:])
     if max(len(r) for r in rows) == 1:
         return _import_single_column(rows)
-    return _import_generic(header, rows[1:], zip_column)
+    return _import_generic(rows, zip_column)
 
 
 # ------------------------------------------------------------------------- Zipcator (§5.3)
@@ -197,12 +198,8 @@ def _import_zipcator(header: list[str], body: list[list[str]]) -> ParsedInput:
         assert added is not None
         if not added.new:  # a repeated ZIP: first row wins
             first = overlaps.get(tok.zip)
-            if (
-                value is not None
-                and first is not None
-                and value != first
-                and tok.zip not in conflicts
-            ):
+            differs = tok.zip in blank if first is None else value not in (None, first)
+            if value is not None and differs and tok.zip not in conflicts:
                 conflicts.append(tok.zip)
             continue
         if value is None:
@@ -222,26 +219,47 @@ def _import_zipcator(header: list[str], body: list[list[str]]) -> ParsedInput:
 
 
 # ------------------------------------------------------------------------- generic CSV (§5.2)
+def _tokens(cells: Sequence[str]) -> list[str]:
+    """Every token in the cells, splitting on the paste separators (``02108 02109`` is two)."""
+    return [t for cell in cells for t in split_tokens(cell) if t]
+
+
 def _import_single_column(rows: list[list[str]]) -> ParsedInput:
     first = _cell(rows[0], 0).strip()
     rest = [_cell(r, 0) for r in rows[1:]]
+    first_tokens = _tokens([first])
     detected: ColumnDetection = "single"
     if _norm_name(first) in _ZIP_NAMES:
         has_header, detected = True, "header"
-    elif normalize_token(first).valid:
-        has_header = False  # header-less: the first value is data
+    elif first_tokens and all(normalize_token(t).valid for t in first_tokens):
+        has_header = False  # header-less: the first line is data
     else:
         # an unknown label ("my zips") or junk: a label only if the rest looks like ZIPs
-        has_header = _share_valid(rest) >= _CONTENT_SHARE
+        has_header = _share_valid(_tokens(rest)) >= _CONTENT_SHARE
     collector = ZipCollector()
-    for cell in rest if has_header else [_cell(r, 0) for r in rows]:
-        collector.add(cell)
+    for token in _tokens(rest if has_header else [_cell(r, 0) for r in rows]):
+        collector.add(token)
     return collector.build("csv", zip_column=first if has_header else None, detected_by=detected)
 
 
-def _import_generic(
-    header: list[str], body: list[list[str]], zip_column: str | None
-) -> ParsedInput:
+def _import_generic(rows: list[list[str]], zip_column: str | None) -> ParsedInput:
+    first = [c.replace(_BOM, "").strip() for c in rows[0]]
+    named = any(_norm_name(h) in _ZIP_NAMES for h in first)
+    # No ZIP-like header name and a ZIP-like value in row 1: the file has no header row.
+    headerless = not named and any(normalize_token(c).valid for c in first if c)
+    if headerless:
+        header = [f"Column {i + 1}" for i in range(max(len(r) for r in rows))]
+        body = rows
+        cells = [c for r in rows for c in r if c.strip()]
+        if zip_column is None and _share_valid(cells) >= _CONTENT_SHARE:
+            # a plain list of ZIPs laid out on one or several lines: take every cell
+            collector = ZipCollector()
+            for cell in cells:
+                collector.add(cell)
+            return collector.build("csv", zip_column=None, detected_by="single")
+    else:
+        header, body = first, rows[1:]
+
     if zip_column is not None:
         wanted = zip_column.strip()
         matches = [i for i, h in enumerate(header) if h == wanted] or [

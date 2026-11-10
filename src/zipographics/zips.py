@@ -43,9 +43,22 @@ _HEADER_AT_START = re.compile(
 )
 
 
+#: No valid token (even wrapped as ``"=""02108"""`` or ``2108-1234.0``) is longer than this once
+#: its outer quotes and whitespace are gone; longer input is junk and skips the cleanup loop,
+#: which is quadratic on adversarial input such as ``="`` repeated 300,000 times.
+_MAX_CLEAN_LENGTH = 40
+
+
+def split_tokens(text: str) -> list[str]:
+    """Split on any run of commas, semicolons, pipes and whitespace (may include empty strings)."""
+    return _SEPARATORS.split(text)
+
+
 def clean_token(raw: str) -> str:
     """Strip quotes, whitespace, Excel's ``=`` text formula and a trailing ``.0``."""
-    s = raw
+    s = raw.strip(_STRIP_CHARS)
+    if len(s) > _MAX_CLEAN_LENGTH:
+        return s
     while True:
         t = s.strip(_STRIP_CHARS)
         if t.startswith("="):
@@ -117,6 +130,6 @@ def parse_paste(text: str) -> ParsedInput:
     """Parse pasted or typed text: any run of commas, semicolons, pipes, whitespace separates."""
     body = _HEADER_AT_START.sub("", text, count=1)
     collector = ZipCollector()
-    for raw in _SEPARATORS.split(body):
+    for raw in split_tokens(body):
         collector.add(raw)
     return collector.build("paste")

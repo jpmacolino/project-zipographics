@@ -209,3 +209,64 @@ simulated by `make_variants.py`; none is a real Excel file yet (the Phase 6 STOP
 one). One observation for the importer: in the Excel-safe file the raw bytes of a ZIP cell are
 `"=""33602"""`, which a CSV reader turns into `="33602"`; the token cleaner also accepts the raw
 doubled-quote form (a user pasting lines from the file).
+
+### Phase 1 decisions (2026-11-09): zips, importer, review
+
+**B4. Review takes a "facts frame", not the parquet.** `review.summarize(parsed, facts, ...)`
+takes a DataFrame indexed by 5-char string ZIP with `state`, `population`, `households`
+(`zipographics.facts.validate_facts` checks the shape). The Phase 4 loader builds it from
+`zcta_profile.parquet` via the metrics registry (`pop`, `hh`), so Phase 1 needs no Census data and
+no registry. `facts.py` is a module the spec's §8 list doesn't name; it also holds the default
+benchmark-state rule (§6.8) so review and `profile` share one implementation. `UsePolicy` is
+defined in `models.py` now (the review prints industry and restricted mode) and Phase 5 fills in
+the vertical table.
+
+**B5. The CSV importer uses the `csv` module, not pandas.** SPEC §5.2 says "read with
+`dtype=str`". The `csv` module never infers types, which is the same guarantee with less
+machinery, and handles ragged rows and delimiter sniffing directly. Alternative: `pandas.read_csv(
+dtype=str, keep_default_na=False)`; equivalent for ZIPs, rejected for the extra failure modes.
+
+**B6. Token details beyond the §5.2 table.**
+- Cleanup strips straight and typographic quotes, whitespace (including non-breaking), a stray BOM
+  and zero-width space, a leading `=` (Excel text formula), and a trailing `.0`/`.00`. The raw
+  doubled-quote form `"=""02108"""` is accepted.
+- Digit checks use `[0-9]`; `str.isdigit()` and `\d` accept Arabic-Indic and full-width digits,
+  which are rejected as invalid (tested).
+- A header phrase (`zip`, `zipcode`, `zip code`, `zip_code`, `zip5`, `postal code`, `postalcode`,
+  `zcta`, `zcta5`) is dropped only at the very start of pasted text, including multi-word forms.
+- Repairs and truncations are reported for the retained occurrence only. For `2108` then
+  `02108`, the first is kept and reported as repaired and the second is a duplicate. For `02108`
+  then `2108`, the second is the duplicate and nothing is reported as repaired.
+- `ZIP + space + 4 digits` (`02108 1234`) is two tokens in a paste (the second is padded to
+  `01234`). Accepted limitation: spaces are separators per §5.2.
+
+**B7. CSV column detection.** Rows 2+ are data for any file with 2+ columns; row 1 is always the
+header. A single column is header-less when its first value is a valid token; a known header name
+or (unknown label and the rest ≥ 80 % valid) makes it a header. Content detection (≥ 80 % valid,
+no header-name match) can pick a numeric column such as `Population` because 3-4 digit numbers
+pass the repair rule; the UI will show the chosen column with a dropdown to change it (Phase 6),
+and several candidates require a choice (`ColumnChoiceRequired`). Two header-name matches
+(`ZIP` and `Zip Code`) also require a choice.
+
+**B8. Zipcator row rules, details.** Overlap accepts `12.5`, `12.5%` and a quoted `12,5`
+(European Excel) and rejects `nan`, `inf`, `1e2`, negatives and `0`; range (0, 100]. A rejected
+row is listed with its reason and its ZIP is not imported; a later valid row for that ZIP can
+still add it. A repeated ZIP keeps the first row; a different overlap on the repeat is listed
+as a conflict. Blank overlap: ZIP kept, treated as full (w = 1), listed.
+
+**B9. Encodings.** Order: UTF-16 when a UTF-16 BOM is present (Excel's "Unicode Text"), UTF-8 with
+or without BOM, cp1252, then latin-1 (cp1252 leaves five bytes undefined; latin-1 never fails, so
+a bad byte can't crash an upload). A single field over the `csv` module's 128 KB limit gives a
+clean "could not be read as CSV" message.
+
+**B10. Review rules the spec left open.**
+- A zero-population ZIP is *recognized* (it is in the data) and listed under "no residents"; it is
+  not also "small". Unknown (null) population or households is never flagged as small.
+- "Repaired ZIP in an unexpected state" compares each repaired ZIP's state with the dominant state
+  of *all other* recognized ZIPs (the ZIP itself excluded); a lone repaired ZIP has nothing to
+  compare with.
+- Dominant state = largest summed population; unknown population counts as 0; ties go to the state
+  that appears first in the input. The same function will pick the default benchmark in Phase 2.
+- Blocking: zero recognized ZIPs, or more than 1,000 *valid* ZIPs (counted before the data
+  lookup), each with its own message; both can apply.
+- Measured: parse + review of 1,000 ZIPs that are all repaired takes 0.10 s (budget 0.5 s).

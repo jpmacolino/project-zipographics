@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from synth_facts import make_facts
-from zipographics.review import review_lines, summarize
 
 from zipographics.config import MAX_ZIPS
 from zipographics.models import ParsedInput, ReviewSummary, UsePolicy
+from zipographics.review import review_lines, summarize
 from zipographics.zips import parse_paste
 
 # state, population, households
@@ -293,3 +293,21 @@ def test_context_line_is_always_last() -> None:
     assert lines[-1] == "Project: Acme · Industry: Home services · Restricted mode: off"
     on = UsePolicy(restricted=True, vertical="Insurance", answer="Yes (set by industry)")
     assert review_lines(run("33602", on))[-1] == "Industry: Insurance · Restricted mode: on"
+
+
+def test_zipcator_rejected_rows_and_plural_forms() -> None:
+    from zipographics.models import RejectedRow
+
+    parsed = ParsedInput(
+        zips=("33602", "33603", "33604"),
+        overlaps={"33602": 50.0},
+        blank_overlap=("33603", "33604"),
+        rejected_rows=(RejectedRow("33605", "-5", "overlap must be above 0 and at most 100"),),
+        overlap_conflicts=("33602", "33603"),
+        source="zipcator",
+    )
+    lines = review_lines(summarize(parsed, FACTS))
+    text = "\n".join(lines)
+    assert "2 ZIPs have no overlap value and are treated as full ZIPs: 33603, 33604" in text
+    assert "1 row rejected for an unusable overlap: 33605 (-5: overlap must be above 0" in text
+    assert "2 ZIPs repeat with a different overlap; the first value is used: 33602, 33603" in text

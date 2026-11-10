@@ -98,7 +98,8 @@ class ReviewSummary:
     not_found: tuple[str, ...]
     no_residents: tuple[str, ...]
     repaired: tuple[ZipToken, ...]
-    repaired_unexpected_state: tuple[tuple[str, str, str], ...]  # (zip, its state, the rest's state)
+    #: (zip, its state, the state of the rest) for repaired ZIPs that look like typos.
+    repaired_unexpected_state: tuple[tuple[str, str, str], ...]
     truncated: tuple[ZipToken, ...]
     invalid: tuple[str, ...]
     duplicates: int

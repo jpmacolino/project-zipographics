@@ -27,8 +27,8 @@ FIVE = re.compile(r"[0-9]{5}")
         ("“02108”", "02108", "ok"),  # smart quotes
         ('="02108"', "02108", "ok"),  # Zipcator Excel-safe, after CSV decoding
         ('"=""02108"""', "02108", "ok"),  # the same, raw from the file
-        ("﻿02108", "02108", "ok"),  # stray BOM
-        (" 02108 ", "02108", "ok"),  # non-breaking spaces
+        ("\N{ZERO WIDTH NO-BREAK SPACE}02108", "02108", "ok"),  # stray BOM
+        ("\N{NO-BREAK SPACE}02108\N{NO-BREAK SPACE}", "02108", "ok"),  # non-breaking spaces
         ("02108.0", "02108", "ok"),  # Excel float
         ("33602.00", "33602", "ok"),
         # 3-4 digits: left-padded and counted as repaired
@@ -81,7 +81,10 @@ def test_token_rules(raw: str, expected: str, status: str) -> None:
         "zip",
         "🙂",
         "٠٢١٠٨",  # Arabic-Indic digits: str.isdigit() accepts them, we must not
-        "０２１０８",  # full-width digits
+        (  # full-width digits
+            "\N{FULLWIDTH DIGIT ZERO}\N{FULLWIDTH DIGIT TWO}\N{FULLWIDTH DIGIT ONE}"
+            "\N{FULLWIDTH DIGIT ZERO}\N{FULLWIDTH DIGIT EIGHT}"
+        ),
         "²¹⁰⁸",
     ],
 )

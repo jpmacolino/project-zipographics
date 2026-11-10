@@ -13,6 +13,8 @@ component is flagged ``incomplete``.
 
 from __future__ import annotations
 
+import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
@@ -40,6 +42,10 @@ from zipographics.stats import MedianCode, Tier
 
 Source = Literal["published", "derived", "interpolated"]
 F = NDArray[np.float64]
+
+#: ACS annotation values are all at or below this; any frame value this low escaped the build.
+_SENTINEL_FLOOR = -100_000_000
+_CODES = {"none", "top", "bottom"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +81,8 @@ class _Data:
     def __init__(self, frame: pd.DataFrame, zips: Sequence[str], metric_list: Sequence[Metric]):
         if not zips:
             raise ValueError("no ZIPs to profile")
+        if len(set(zips)) != len(zips):
+            raise ValueError("duplicate ZIPs in the input would be counted twice")
         missing_zip = next((z for z in zips if z not in frame.index), None)
         if missing_zip is not None:
             raise KeyError(missing_zip)
@@ -85,6 +93,8 @@ class _Data:
         columns: list[str] = []
         for key in keys:
             columns += [f"{key}_e", f"{key}_m"]
+            if metrics.VARIABLES[key].is_median:
+                columns.append(f"{key}_code")  # a published median without its code fails open
         for col in columns:
             if col not in frame.columns:
                 raise ValueError(f"frame is missing column {col}")
@@ -92,16 +102,21 @@ class _Data:
         self.n = len(zips)
         self._e = {k: pd.to_numeric(sub[f"{k}_e"], errors="coerce").to_numpy(float) for k in keys}
         self._m = {k: pd.to_numeric(sub[f"{k}_m"], errors="coerce").to_numpy(float) for k in keys}
+        for k in keys:  # the build nulls sentinels; refuse them here rather than sum them
+            for col, arr in ((f"{k}_e", self._e[k]), (f"{k}_m", self._m[k])):
+                if np.any(arr <= _SENTINEL_FLOOR):
+                    raise ValueError(f"sentinel value in column {col}: the build must null these")
+        for col in (c for c in columns if c.endswith("_code")):
+            bad = set(sub[col].astype(object).tolist()) - _CODES
+            if bad:
+                raise ValueError(f"invalid median code in {col}: {sorted(map(str, bad))}")
         self._frame = sub
 
     def block(self, keys: Sequence[str]) -> tuple[F, F]:
         return np.vstack([self._e[k] for k in keys]), np.vstack([self._m[k] for k in keys])
 
     def code(self, key: str) -> NDArray[np.object_]:
-        col = f"{key}_code"
-        if col not in self._frame.columns:
-            return np.full(self.n, "none", dtype=object)
-        return self._frame[col].fillna("none").to_numpy(dtype=object)
+        return self._frame[f"{key}_code"].to_numpy(dtype=object)
 
 
 @dataclass(slots=True)
@@ -149,7 +164,8 @@ def _compute(
     if isinstance(spec, CountSpec):
         e, m = data.block([spec.var])
         a = _agg(e, m, _ones(1), w, axes)
-        single = axes == (0,) or data.n == 1
+        # a count scaled by an overlap weight is an estimate, not a published figure
+        single = axes == (0,) or (data.n == 1 and bool(w[0] == 1.0))
         return _Result(a.est, a.moe, a.incomplete, none_code, "published" if single else "derived")
 
     if isinstance(spec, ShareSpec):
@@ -158,11 +174,13 @@ def _compute(
         with np.errstate(divide="ignore", invalid="ignore"):
             raw = num.est / den.est
         valid = ~np.isnan(num.est) & (den.est > 0)
-        over = valid & (raw > 1 + 1e-9)
-        est = np.where(valid, np.minimum(raw, 1.0), np.nan)
+        out_of_range = valid & ((raw > 1 + 1e-9) | (raw < 0))
+        est = np.where(valid, np.clip(raw, 0.0, 1.0), np.nan)
         moe = vstats.moe_proportion(num.est, num.moe, den.est, den.moe)
         moe = np.where(valid, moe, np.nan)
-        return _Result(est, moe, num.incomplete | den.incomplete | over, none_code, "derived")
+        return _Result(
+            est, moe, num.incomplete | den.incomplete | out_of_range, none_code, "derived"
+        )
 
     if isinstance(spec, RatioSpec):
         coef = np.array([c for _, c in spec.num], dtype=float)
@@ -295,6 +313,9 @@ def build_profile(
     One ZIP (or one benchmark geography) shows published medians and counts; several ZIPs
     interpolate medians from summed brackets.
     """
+    for z, wt in (weights or {}).items():
+        if not (math.isfinite(wt) and 0 < wt <= 1):
+            raise ValueError(f"overlap weight for {z} must be in (0, 1], got {wt}")
     selected = _select(metric_ids)
     data = _Data(frame, zips, selected)
     w = np.array([1.0 if weights is None else weights.get(z, 1.0) for z in zips], dtype=float)
@@ -431,6 +452,8 @@ class BenchmarkOptions:
     puerto_rico_note: str | None
 
 
+_COUNTY_ID = re.compile(r"[0-9]{5}")
+
 PR_NOTE = (
     "The national benchmark covers the 50 states and DC; the Census Bureau's U.S. figures "
     "exclude Puerto Rico, so Puerto Rico ZIPs are compared with it only for context."
@@ -449,7 +472,8 @@ def benchmark_options(zips: Sequence[str], facts: pd.DataFrame) -> BenchmarkOpti
 
     State and county ids are FIPS: a state's two digits, a county's five (state + county).
     """
-    states = state_entries(zips, facts)
+    # the ACS ZCTA benchmarks cover the 50 states, DC and Puerto Rico only
+    states = [e for e in state_entries(zips, facts) if e.state in STATE_FIPS]
     if not states:
         raise ValueError("no recognized ZIPs have a state")
     default_state = StateTotals(states).dominant()
@@ -462,14 +486,18 @@ def benchmark_options(zips: Sequence[str], facts: pd.DataFrame) -> BenchmarkOpti
     county_refs: tuple[BenchmarkRef, ...] = ()
     default_county: BenchmarkRef | None = None
     if "county_fips" in facts.columns:
-        counties = state_entries(zips, facts, column="county_fips")
+        counties = [
+            e
+            for e in state_entries(zips, facts, column="county_fips")
+            if _COUNTY_ID.fullmatch(e.state)  # 5 digits: state + county, never a bare county code
+        ]
         if counties:
-            names = (
-                facts["county"].to_dict() if "county" in facts.columns else {}
-            )  # name by ZIP; the county's name is its primary ZIPs'
+            names = facts["county"].to_dict() if "county" in facts.columns else {}
             first_name: dict[str, str] = {}
             for e in counties:
-                first_name.setdefault(e.state, str(names.get(e.zip) or e.state))
+                name = names.get(e.zip)
+                label = name if isinstance(name, str) and name.strip() else e.state
+                first_name.setdefault(e.state, label)
             order = _by_population(counties)
             county_refs = tuple(BenchmarkRef("county", g, first_name[g]) for g in order)
             top = StateTotals(counties).dominant()

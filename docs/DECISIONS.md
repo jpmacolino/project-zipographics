@@ -350,7 +350,7 @@ is negative). Then p_lo = 0.5 − SE(p), p_hi = 0.5 + SE(p) (clamped to (0, 1)),
 values at those proportions give the interval, `SE(median) = ½ (v_hi − v_lo)` and `MOE = 1.645 ×
 SE`. Cumulative "through bracket k" is used (not "below k") so the proportion is the share at or
 below the bracket boundary the median lies in; it is a labeled approximation. A worked example is
-in `tests/unit/test_stats_median.py`.
+in `tests/unit/test_stats.py::test_median_moe_hand_calculation`.
 
 **D9 (2026-11-09). Metric registry design (SPEC §4.2, Appendix C).** `zipographics.metrics`
 declares 74 metrics (Appendix C) over about 270 Census variables.
@@ -375,3 +375,34 @@ declares 74 metrics (Appendix C) over about 270 Census variables.
 - **Limited English** sums the twelve "less than very well" cells of C16001 (one per language group).
 - `indexable` is derived: every kind except `count`.
 - `metrics.py` has a ruff per-file ignore for E501/RUF002 in `pyproject.toml`: it is declarative data.
+
+**B12 (2026-11-09). Phase 2 QA follow-ups.**
+- **Registry label guard (corrects D9).** D9 originally said every single cell carries a label regex;
+  the QA review found only 18 of 223 did. Now every non-bracket variable has one (`_CELL_LABELS`,
+  matched against the end of the ACS label so `Owner occupied` cannot match `Renter occupied`), pinned by
+  `tests/unit/test_registry_definitions.py`, which also lists every share's numerator and denominator
+  cells independently of the registry. Data Profile regexes are anchored to `^estimate!!` because DP
+  variables also have `Percent!!` and `Margin of Error!!` labels. Still unverified until Phase 4.
+- **Profile fails closed.** A published median needs its `_code` column (values only none/top/bottom);
+  any value at or below -100,000,000 (a sentinel that escaped the build) is rejected; duplicate ZIPs and
+  overlap weights outside (0, 1] are errors; shares clamp to [0, 1] and are flagged `incomplete` when
+  clamped. The sentinel layer rejects numeric geography keys and a median variable with no annotation
+  column.
+- **Index rounding** rounds the ratio to 9 decimals before adding 0.5, so an exact half indexes up
+  (`0.145` -> 15, not 14).
+- **`source`:** a count scaled by an overlap weight below 1 is `derived`, not `published`.
+- **Benchmark options** ignore states outside the 50 + DC + PR benchmark set and county ids that are not
+  5 digits, and fall back to the id when a county name is blank.
+- **Tie convention.** At an exact 50 % tie across an empty bracket (`[4, 0, 4]`) we return the lower
+  boundary (10); the PUMS rule ("first category with cumulative % greater than p") gives 20. Both are
+  valid medians; kept, documented, tested.
+- **D8 sanity check (reviewer's simulation).** With multinomial samples whose bracket MOEs match simple
+  random sampling (N = 5k, 20k, 60k), D8's median MOE came out 1.09-1.11 times the simulated MOE: mildly
+  conservative. **Phase 4 `data` test to add:** compare the interpolated MOE for single ZIPs with the
+  published B19013_001M (SPEC §6.4 only measures the median gap).
+- **Open: zero-estimate MOEs.** The reviewer recalls the separate Census "Worked Examples for
+  Approximating Margins of Error" advising that only one zero-estimate MOE be included in a sum; not
+  verified. Our sum includes all of them (conservative). Read that document at the start of Phase 4.
+- Deferred, see the Phase 2 entry in QA_REPORT: in-radius per-ZIP household/population columns and a
+  per-ZIP index tier (Phase 5/6), "1939 or earlier" display text for the bottom year-built bound
+  (Phase 5/6), how often null cells bias shares in real data (Phase 4).

@@ -124,7 +124,8 @@ def index_value(value: float | None, benchmark: float | None) -> int | None:
     """``100 * value / benchmark`` rounded half up; unknown if either is null or benchmark is 0."""
     if value is None or benchmark is None or benchmark == 0:
         return None
-    scaled = 100 * value / benchmark + 0.5
+    # round away float noise first: 100 * 0.145 is 14.499999999999998, which must index as 15
+    scaled = round(100 * value / benchmark, 9) + 0.5
     return math.floor(scaled) if math.isfinite(scaled) else None
 
 

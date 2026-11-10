@@ -15,6 +15,7 @@ their IDs shift between vintages (SPEC §4.2, DECISIONS D9). Parquet columns are
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -110,6 +111,81 @@ class Metric:
 VARIABLES: dict[str, Var] = {}
 
 
+def _t(*segments: str) -> str:
+    """Regex matching a variable label that *ends* with these segments (``!!``-separated).
+
+    ACS labels look like ``Estimate!!Total:!!Owner occupied``; parent rows carry a trailing colon.
+    Matching the tail keeps the pattern readable while still telling ``Owner occupied`` from
+    ``Renter occupied`` and a cell from its neighbours.
+    """
+    return "(?:^|!!)" + "!!".join(re.escape(s) + ":?" for s in segments) + "$"
+
+
+_TOTAL = _t("Total")
+# fmt: off
+_VEHICLES = ["1 vehicle available", "2 vehicles available", "3 vehicles available",
+             "4 vehicles available", "5 or more vehicles available"]
+#: Expected label (regex) of every single-cell variable. Bracket cells are verified by their bounds
+#: instead. The Phase 4 build fails with a clear message when an ID's label does not match.
+_CELL_LABELS: dict[str, str] = {
+    **{k: _TOTAL for k in (
+        "B01003_001", "B11001_001", "B25001_001", "B25002_001", "B01001_001", "B19001_001",
+        "B11005_001", "B17001_001", "B25003_001", "B25024_001", "B25034_001", "B25038_001",
+        "B25044_001", "B08301_001", "B08303_001", "B23025_001", "B15003_001", "C16001_001",
+        "B03003_001", "B02001_001", "B28002_001",
+    )},
+    "B01002_001": r"median age",
+    "B19013_001": r"median household income",
+    "B19025_001": r"aggregate household income",
+    "B19301_001": r"per capita income",
+    "B25035_001": r"median year structure built",
+    "B25064_001": r"median gross rent",
+    "B25077_001": r"median value",
+    "B11005_002": _t("Households with one or more people under 18 years"),
+    "B17001_002": _t("Income in the past 12 months below poverty level"),
+    "B25002_003": _t("Vacant"),
+    "B25003_002": _t("Owner occupied"),
+    "B25003_003": _t("Renter occupied"),
+    "B25024_002": _t("1, detached"),
+    "B25024_003": _t("1, attached"),
+    "B25024_010": _t("Mobile home"),
+    "B25044_003": _t("Owner occupied", "No vehicle available"),
+    "B25044_010": _t("Renter occupied", "No vehicle available"),
+    **{f"B25044_{4 + i:03d}": _t("Owner occupied", v) for i, v in enumerate(_VEHICLES)},
+    **{f"B25044_{11 + i:03d}": _t("Renter occupied", v) for i, v in enumerate(_VEHICLES)},
+    "B08301_003": _t("Drove alone"),
+    "B08301_004": _t("Carpooled"),
+    "B08301_010": r"public transportation",
+    "B08301_018": _t("Bicycle"),
+    "B08301_019": _t("Walked"),
+    "B08301_021": _t("Worked from home"),
+    **{f"B08303_{n:03d}": _t(t) for n, t in zip(
+        range(8, 14),
+        ["30 to 34 minutes", "35 to 39 minutes", "40 to 44 minutes", "45 to 59 minutes",
+         "60 to 89 minutes", "90 or more minutes"], strict=True)},
+    "B23025_002": _t("In labor force"),
+    "B23025_003": _t("In labor force", "Civilian labor force"),
+    "B23025_005": _t("Civilian labor force", "Unemployed"),
+    **{f"B15003_{n:03d}": _t(t) for n, t in zip(
+        range(17, 26),
+        ["Regular high school diploma", "GED or alternative credential",
+         "Some college, less than 1 year", "Some college, 1 or more years, no degree",
+         "Associate's degree", "Bachelor's degree", "Master's degree",
+         "Professional school degree", "Doctorate degree"], strict=True)},
+    "C16001_003": _t("Spanish"),
+    "B03003_003": _t("Hispanic or Latino"),
+    **{f"B02001_{n:03d}": _t(t) for n, t in zip(
+        range(2, 9),
+        ["White alone", "Black or African American alone",
+         "American Indian and Alaska Native alone", "Asian alone",
+         "Native Hawaiian and Other Pacific Islander alone", "Some other race alone",
+         "Two or more races"], strict=True)},
+    "B28002_004": _t("Broadband of any type"),
+    "B28002_013": _t("No Internet access"),
+}
+# fmt: on
+
+
 def _var(
     key: str,
     label: str | None = None,
@@ -123,7 +199,7 @@ def _var(
         VARIABLES[key] = Var(
             key=key,
             table=table or key.split("_")[0],
-            label=label,
+            label=label if label is not None else _CELL_LABELS.get(key),
             is_median=median,
             resolve=resolve,
             dataset="profile" if resolve == "label" else "detailed",
@@ -263,12 +339,19 @@ _share(
     (
         _var(
             "DP03_OWN_U6_ALLLF",
-            r"own children.*under 6 years!!all parents in family in labor force$",
+            r"^estimate!!.*own children.*under 6 years!!all parents in family in labor force$",
             table="DP03",
             resolve="label",
         ),
     ),
-    (_var("DP03_OWN_U6", r"own children.*under 6 years$", table="DP03", resolve="label"),),
+    (
+        _var(
+            "DP03_OWN_U6",
+            r"^estimate!!.*own children.*under 6 years$",
+            table="DP03",
+            resolve="label",
+        ),
+    ),
     "own children under 6",
     "Own children under 6 whose parents are all in the labor force (ACS Data Profile DP03).",
 )
@@ -449,7 +532,7 @@ _share(
     (
         _var(
             "DP03_UNINS",
-            r"health insurance coverage!!civilian noninstitutionalized population!!no health insurance coverage$",
+            r"^estimate!!health insurance coverage!!civilian noninstitutionalized population!!no health insurance coverage$",
             table="DP03",
             resolve="label",
         ),
@@ -457,7 +540,7 @@ _share(
     (
         _var(
             "DP03_CIVNONINST",
-            r"health insurance coverage!!civilian noninstitutionalized population$",
+            r"^estimate!!health insurance coverage!!civilian noninstitutionalized population$",
             table="DP03",
             resolve="label",
         ),

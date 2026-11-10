@@ -70,5 +70,5 @@ def index_values(est: F, bench: float | None) -> F:
     if bench is None or bench == 0 or np.isnan(bench):
         return np.full(est.shape, np.nan)
     with np.errstate(over="ignore", invalid="ignore"):
-        out = np.floor(100 * est / bench + 0.5)
+        out = np.floor(np.round(100 * est / bench, 9) + 0.5)
     return np.where(np.isnan(est) | ~np.isfinite(out), np.nan, out)

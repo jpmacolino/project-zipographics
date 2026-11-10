@@ -21,6 +21,11 @@ fixed, golden-scenario verification, SPEC §10 checklist)._
 | 7 | 1 | (a) blank overlap then a value on a repeat gave no warning; (b) `-5` reported as "not a number"; (c) a 300 KB token of `="` took ~8 s | (a) conflict required a first value; (b) regex had no sign; (c) quadratic cleanup loop | (a) blank-then-value is a conflict; (b) signed-number check; (c) tokens over 40 chars skip cleanup | `test_blank_overlap_then_a_value_on_a_repeat_is_a_conflict`, `test_overlap_rejection_reasons`, `test_a_pathological_token_is_rejected_quickly` |
 | 8 | 2 | `moe_proportion` flipped from 0 to a large value under uniform scaling (X=1 ±1 of Y=41.5 ±41.5, w=3 gave 0.034 instead of 0) | Equal relative MOEs make the radicand exactly 0 in theory but ±1e-16 in floats, so rounding chose between the minus and plus branches | A radicand within 1e-12 of its plus-form value counts as 0 (scalar and vectorized) | `test_proportion_moe_radicand_within_float_noise_of_zero_is_zero_not_the_plus_branch`, `test_vectorized_proportion_has_the_same_noise_and_overflow_behavior` (found by the property tests) |
 | 9 | 2 | Scalar `moe_proportion` / `moe_ratio` / `index_value` raised `OverflowError` for absurdly small denominators or benchmarks, while the vectorized versions returned NaN | `p**2` and `math.floor(inf)` | Overflow or non-finite results are unknown (None / NaN) in both | `test_proportion_moe_with_an_absurdly_small_denominator_is_unknown_not_a_crash`, `test_overflowing_intermediate_values_are_unknown` (found by the property tests) |
+| 10 | 2 | A published median with no `_code` column in the frame was shown as exact and indexable (index 417 instead of null); a median variable with no `EA` column got code `none`; any string was accepted as a code | `profile._Data.code` and `clean_frame` defaulted silently | Both raise; codes validated | `test_a_published_median_without_its_code_column_is_rejected`, `test_an_unknown_median_code_is_rejected`, `test_a_median_variable_without_its_annotation_column_is_an_error`, `test_a_coded_published_median_has_no_index_in_the_per_zip_column` |
+| 11 | 2 | A sentinel in the frame (e.g. -666666666) was summed as a number; shares could go negative | profile trusted its input; clamp only at 1 | `_Data` rejects values <= -1e8; shares clamp to [0, 1] and flag | `test_a_sentinel_that_reaches_the_frame_is_rejected`, `test_a_negative_numerator_is_clamped_to_a_zero_share_and_flagged` |
+| 12 | 2 | 205 of 223 registry variables had no label check, so a wrong ID could not be caught | Label regexes only on a few cells | Label regex for every single cell; table-driven definition tests; DP regexes anchored | `tests/unit/test_registry_definitions.py` |
+| 13 | 2 | `clean_frame` turned integer geography keys into strings (`2108`), losing leading zeros | `astype(str)` on numbers | Non-string keys raise | `test_numeric_geography_keys_are_rejected_not_stringified` |
+| 14 | 2 | Exact-half index values rounded down (0.145 -> 14); `build_profile` double-counted duplicate ZIPs and accepted weights of 0, negative or inf; a weighted single count was labeled `published`; unknown states or short county ids broke `benchmark_options` | Float noise; missing input validation | Round before +0.5; validation; source rule; filtering | `test_index_rounds_exact_halves_up_despite_float_noise`, `test_duplicate_zips_are_rejected_instead_of_double_counted`, `test_weights_must_be_in_zero_one`, `test_a_scaled_single_count_is_not_labeled_published`, `test_states_outside_the_acs_geography_are_ignored`, `test_county_ids_must_be_five_digits_and_missing_names_fall_back` |
 
 ## Golden scenarios: independent verification
 
@@ -68,3 +73,34 @@ ZIPs have suppressed population the tie-break decides the default benchmark; acc
 Gates after triage: ruff, format, mypy, size, secrets pass; **281 tests passed**, coverage
 **99.72 %** (line + branch); `pytest -m slow`: 2 passed (1,000 repaired ZIPs parse + review
 0.10 s vs 0.5 s budget; 19,000 repaired ZIPs summarize < 1 s, was 13.9 s).
+
+### Phase 2: stats, sentinels, metrics, profile (2026-11-09)
+Independent `qa-reviewer` (fresh context). **No HIGH findings.** It re-derived every formula from the
+official texts and reproduced every worked example; an independent median + MOE implementation matched
+D8 to 10 digits (29,572 random distributions; one exact-tie difference); medians are never averaged,
+summed or weighted anywhere; no sentinel survives the sentinel layer; vectorized and scalar formulas
+agree on 20,000 random draws. 76 hand-made mutants: most killed; the survivors are now covered.
+
+| # | severity | finding | handling |
+|---|---|---|---|
+| M1 | MEDIUM | missing/invalid median `_code` fails open | **Fixed** (bug 10) |
+| M2 | MEDIUM | profile trusts frame values (sentinels, negatives) | **Fixed** (bug 11) |
+| M3 | MEDIUM | label guard absent for most cells; 6 registry mutants survived | **Fixed** (bug 12); table-driven tests pin every share |
+| M4 | MEDIUM | vectorized plus-form fallback, all-null bracket, coded `index_column`, empty-end-bracket interval untested | **Fixed**: tests added |
+| M5 | MEDIUM | `clean_frame` stringifies numeric keys | **Fixed** (bug 13) |
+| L1 | LOW | zero-estimate MOE rule | **Open, recorded** (B12): read the Census worked-examples document at the start of Phase 4 |
+| L2 | LOW | exact-half index rounding | **Fixed** (bug 14) |
+| L3 | LOW | tie convention differs from PUMS | **Documented** (B12), pinned by test |
+| L4, L5 | LOW | `source` on scaled counts; duplicate ZIPs and bad weights | **Fixed** (bug 14) |
+| L6 | LOW | benchmark options robustness | **Fixed** (bug 14) |
+| L7 | LOW | wrong test file named in D8 | **Fixed** |
+| L8 | LOW | DP regexes unanchored | **Fixed** (bug 12) |
+| L9 | LOW | shares biased low when a numerator is wholly null; mean vs per-capita handle null differently; a zero-household ZIP flips a median from published to interpolated; one null bracket MOE makes a trade-area median MOE unreliable | **Deferred to Phase 4**: measure how often it happens in real data; all cases are flagged `incomplete` |
+| L10 | LOW | in-radius per-ZIP columns, per-ZIP index tier | **Deferred to Phase 5/6** (UI/export layer) |
+| L11 | LOW | display text "1939 or earlier" for the 1940 bound | **Deferred to Phase 5/6** (formatting) |
+| L12 | LOW | FIPS test spot-checks 3 of 52 (reviewer verified all 52); NaN input to scalar helpers | **Accepted** |
+| L13 | LOW | `median_age` sums 46 cells, `limited_english` 12 (approximation degrades) | **Deferred to Phase 4**: compare with published values |
+
+Gates after triage: ruff, format, mypy, size, secrets pass; **582 tests passed**, coverage **99.6 %**
+(line + branch); `pytest -m slow`: 3 passed (profile + per-ZIP table + index for 1,000 weighted ZIPs
+0.13 s vs 1 s budget).

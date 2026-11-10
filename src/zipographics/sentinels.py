@@ -106,6 +106,9 @@ def clean_frame(
     ``key`` names the geography column (kept as the string index ``zip``); ``variables`` maps each
     variable ID to whether it is a median (needs the ``<VAR>EA`` annotation column).
     """
+    if not all(isinstance(z, str) for z in raw[key]):
+        # str() on a number would silently drop leading zeros (2108 for 02108)
+        raise ValueError(f"geography key column {key!r} must hold strings, never numbers")
     out = pd.DataFrame(index=pd.Index(raw[key].astype(str), name="zip"))
     totals: Counter[str] = Counter()
     for var, is_median in variables.items():
@@ -114,6 +117,8 @@ def clean_frame(
         out[f"{var}_m"] = err.to_numpy()
         totals.update(counts)
         if is_median:
-            ea = raw[f"{var}EA"] if f"{var}EA" in raw.columns else pd.Series([None] * len(raw))
-            out[f"{var}_code"] = median_code(ea).to_numpy()
+            if f"{var}EA" not in raw.columns:
+                # without the annotation a top-coded median would pass as an exact number
+                raise ValueError(f"median variable {var} needs its annotation column {var}EA")
+            out[f"{var}_code"] = median_code(raw[f"{var}EA"]).to_numpy()
     return out, dict(totals)

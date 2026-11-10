@@ -10,6 +10,7 @@ from __future__ import annotations
 from zipographics.errors import RestrictedUseError
 from zipographics.metrics import Metric
 from zipographics.models import UsePolicy
+from zipographics.verticals import BY_NAME
 
 __all__ = [
     "AD_PLATFORM_NOTICE",
@@ -19,6 +20,7 @@ __all__ = [
     "TAGS",
     "TAG_LABELS",
     "RestrictedUseError",
+    "is_restricted",
     "label_of",
     "require_unrestricted",
 ]
@@ -92,13 +94,28 @@ def label_of(metric: Metric) -> str | None:
     return TAG_LABELS[metric.characteristic] if metric.characteristic else None
 
 
-def require_unrestricted(policy: UsePolicy | None, action: str) -> None:
+def is_restricted(policy: UsePolicy | None, *others: UsePolicy | None) -> bool:
+    """True when any given policy is restricted, missing, or names a restricted industry.
+
+    A caller can hold two policies (the ``policy`` argument and the one an Analysis was built
+    with) or build ``UsePolicy(False, "Insurance", "No")`` by mistake; the stricter reading wins.
+    """
+    for p in (policy, *others):
+        if p is None or p.restricted:
+            return True
+        vertical = BY_NAME.get(p.vertical or "")
+        if vertical is not None and vertical.restricted:
+            return True
+    return False
+
+
+def require_unrestricted(policy: UsePolicy | None, action: str, *others: UsePolicy | None) -> None:
     """Raise :class:`RestrictedUseError` when ``action`` (filter, rank, select...) is not allowed.
 
     Fails closed: with no policy at all the action is refused, so a caller that forgot to pass
     one cannot select ZIPs by demographics.
     """
-    if policy is None or policy.restricted:
+    if is_restricted(policy, *others):
         done = {"filter": "filtered", "rank": "ranked", "select": "selected"}.get(action, action)
         raise RestrictedUseError(
             f"Restricted mode is on: ZIPs can't be {done} by demographic characteristics."

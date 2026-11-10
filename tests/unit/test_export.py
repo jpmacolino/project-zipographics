@@ -259,7 +259,7 @@ def test_each_metric_has_value_moe_reliability_and_index_columns() -> None:
     rows = table_of(csv_text(a, metric_ids=["owner", "pop"]))
     head = rows[0]
     assert head[5:] == [
-        "Homeowners (%)", "Homeowners MOE", "Homeowners reliability", "Homeowners index",
+        "Homeowners (%)", "Homeowners MOE (pts)", "Homeowners reliability", "Homeowners index",
         "Population", "Population MOE", "Population reliability", "Population index",
     ]  # fmt: skip
     first = rows[1]

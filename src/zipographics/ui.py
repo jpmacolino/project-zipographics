@@ -9,6 +9,7 @@ marked with text and a dagger so the meaning never depends on color alone (SPEC 
 from __future__ import annotations
 
 import math
+import re
 
 from zipographics.metrics import Metric
 from zipographics.profile import IndexValue, MetricValue
@@ -19,6 +20,22 @@ DAGGER = "\N{DAGGER}"
 PLUS_MINUS = "\N{PLUS-MINUS SIGN}"
 GEQ = "\N{GREATER-THAN OR EQUAL TO}"
 LEQ = "\N{LESS-THAN OR EQUAL TO}"
+
+# zero-width and bidirectional formatting characters: removed, never shown or written to files
+_INVISIBLE = re.compile(
+    "[" + "".join(chr(c) for c in (*range(0x200B, 0x2010), *range(0x202A, 0x202F),
+                                   *range(0x2066, 0x206A), 0xFEFF)) + "]"
+)  # fmt: skip
+_CONTROL_OR_SPACE = re.compile(r"[\x00-\x20\x7f]+")
+
+
+def clean_text(text: str | None, limit: int | None = None) -> str:
+    """User text made safe for a title, a CSV footer cell and a file name: invisible and
+    bidirectional-override characters removed, control characters and runs of whitespace become
+    one space, trimmed, optionally cut to ``limit`` characters."""
+    out = _CONTROL_OR_SPACE.sub(" ", _INVISIBLE.sub("", text or "")).strip()
+    return out[:limit].rstrip() if limit else out
+
 
 TIER_LABELS: dict[Tier, str] = {
     "good": "Reliable",

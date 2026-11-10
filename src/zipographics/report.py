@@ -21,6 +21,7 @@ import matplotlib as mpl
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch
 
@@ -30,7 +31,7 @@ from zipographics.charts import ChartData
 from zipographics.export import NOTE_CODED, NOTE_MOE, NOTE_ZIP, attestation, default_metrics
 from zipographics.filters import FilterResult, describe
 from zipographics.models import UsePolicy
-from zipographics.restricted import BANNER, BANNER_TITLE, require_unrestricted
+from zipographics.restricted import BANNER, BANNER_TITLE, is_restricted, require_unrestricted
 from zipographics.review import review_lines
 from zipographics.ui import (
     DAGGER,
@@ -144,28 +145,46 @@ def _chart_svg(d: ChartData) -> str:
 
 
 def _shade(ax: Axes, sub: gpd.GeoDataFrame, a: Analysis, metric_id: str) -> None:
-    """Quantile-binned fills with a patch legend (no raster colorbar, so the SVG stays vector)."""
+    """Quantile-binned fills with a patch legend (no raster colorbar, so the SVG stays vector).
+
+    A ZIP with no value, or a top/bottom-coded one (a bound, not an exact number), is drawn
+    neutral. One distinct value makes one bin; no values at all make a plain neutral map.
+    """
     metric = metrics.BY_ID[metric_id]
-    raw = [a.value(z, metric_id).estimate for z in sub["zip"]]
-    vals = np.array([np.nan if v is None else float(v) for v in raw])
+    vals = np.array([_exact(a, z, metric_id) for z in sub["zip"]])
     finite = vals[~np.isnan(vals)]
-    edges = np.unique(np.quantile(finite, np.linspace(0, 1, 6))) if finite.size else np.array([])
+    neutral = to_rgba(_NEUTRAL)
+    if finite.size == 0:
+        sub.plot(ax=ax, color=[neutral] * len(sub), edgecolor="#ffffff", linewidth=0.6)
+        return
+    edges = np.unique(np.quantile(finite, np.linspace(0, 1, 6)))
     bins = max(len(edges) - 1, 1)
-    which = np.clip(np.digitize(vals, edges[1:-1], right=True), 0, bins - 1) if edges.size else vals
+    which = np.clip(np.digitize(vals, edges[1:-1], right=True), 0, bins - 1)
     cmap = mpl.colormaps["Blues"]
     shades = [cmap(0.3 + 0.65 * i / max(bins - 1, 1)) for i in range(bins)]
-    faces = [_NEUTRAL if np.isnan(v) else shades[int(w)] for v, w in zip(vals, which, strict=True)]
+    faces = [neutral if np.isnan(v) else shades[int(w)] for v, w in zip(vals, which, strict=True)]
     sub.plot(ax=ax, color=faces, edgecolor="#ffffff", linewidth=0.6)
-    if edges.size:
-        handles = [
-            Patch(
-                facecolor=shades[i],
-                label=f"{fmt_number(metric, edges[i])} to {fmt_number(metric, edges[i + 1])}",
-            )
+    labels = (
+        [
+            f"{fmt_number(metric, edges[i])} to {fmt_number(metric, edges[i + 1])}"
             for i in range(bins)
         ]
-        ax.legend(handles=handles, title=metric.name, fontsize=7, title_fontsize=7,
-                  frameon=False, loc="center left", bbox_to_anchor=(1.0, 0.5))  # fmt: skip
+        if len(edges) > 1
+        else [fmt_number(metric, edges[0])]
+    )
+    # "$" starts mathtext in matplotlib: escape it so dollar labels stay dollar labels
+    handles = [
+        Patch(facecolor=shades[i], label=lb.replace("$", chr(92) + "$"))
+        for i, lb in enumerate(labels)
+    ]
+    ax.legend(handles=handles, title=metric.name, fontsize=7, title_fontsize=7,
+              frameon=False, loc="center left", bbox_to_anchor=(1.0, 0.5))  # fmt: skip
+
+
+def _exact(a: Analysis, zip_code: str, metric_id: str) -> float:
+    """The value to shade by, or NaN when unknown or only a published bound (SPEC section 6.2)."""
+    v = a.value(zip_code, metric_id)
+    return float("nan") if v.estimate is None or v.code != "none" else float(v.estimate)
 
 
 def _map_svg(
@@ -255,12 +274,12 @@ def _table(
             f"<td>{_e(f[k] or '')}</td>" for k in ("city", "county", "state")
         ]
         if a.weighted:
-            w = a.weights.get(z) if a.weights is not None else None
+            pct = a.overlap_pct(z)
             hh, pop = a.in_radius(z, "hh"), a.in_radius(z, "pop")
             cells += [
-                f"<td>{'' if w is None else f'{w * 100:g}'}</td>",
-                f"<td>{'' if w is None else _e(fmt_number(metrics.BY_ID['hh'], hh))}</td>",
-                f"<td>{'' if w is None else _e(fmt_number(metrics.BY_ID['pop'], pop))}</td>",
+                f"<td>{'' if pct is None else f'{pct:g}'}</td>",
+                f"<td>{_e(fmt_number(metrics.BY_ID['hh'], hh))}</td>",
+                f"<td>{_e(fmt_number(metrics.BY_ID['pop'], pop))}</td>",
             ]
         cells += [_cell(a, z, mid) for mid in ids]
         match = bool(shown_filters and result is not None and result.matches[z].qualifies)
@@ -308,7 +327,7 @@ def render(
 ) -> str:
     """The report as one HTML string. Restricted mode refuses a result that carries rules."""
     policy: UsePolicy = a.policy
-    locked = policy.restricted
+    locked = is_restricted(policy)
     if locked and result is not None and result.active:
         require_unrestricted(policy, "select")
     shown_filters = bool(result is not None and result.active and not locked)
@@ -356,10 +375,10 @@ def render(
         parts.append("<p>The map is unavailable for this report (no boundaries were loaded).</p>")
     else:
         caption = (
-            "Recognized ZIPs with one neutral fill (restricted mode)."
+            "Recognized ZIPs with one neutral fill (restricted mode)"
             if locked
             else f"Shaded by {metrics.BY_ID[chosen_map].name}"
-            + ("; ZIPs that match the filters are outlined." if shown_filters else ".")
+            + ("; ZIPs that match the filters are outlined" if shown_filters else "")
         )
         parts.append(
             f"<figure>{svg}<figcaption>{_e(caption)}. Boundaries are simplified and "

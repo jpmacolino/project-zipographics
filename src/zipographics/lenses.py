@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from zipographics.errors import RestrictedUseError
 from zipographics.models import Rule, UsePolicy
-from zipographics.restricted import require_unrestricted
+from zipographics.restricted import is_restricted, require_unrestricted
 
 __all__ = [
     "CORE_CHARTS",
@@ -178,7 +178,7 @@ def get(name: str) -> Lens:
 def available(policy: UsePolicy | None) -> tuple[Lens, ...]:
     """The lenses the user may switch to. Restricted mode (or no policy: fail closed) allows only
     Context; otherwise every lens except the restricted-only one."""
-    if policy is None or policy.restricted:
+    if is_restricted(policy):
         return (CONTEXT,)
     return tuple(lens for lens in LENSES if not lens.restricted_only)
 
@@ -186,7 +186,7 @@ def available(policy: UsePolicy | None) -> tuple[Lens, ...]:
 def resolve(name: str, policy: UsePolicy | None) -> Lens:
     """The lens to use for a request: Context when restricted, else the one asked for."""
     lens = get(name)
-    if policy is None or policy.restricted:
+    if is_restricted(policy):
         return CONTEXT
     if lens.restricted_only:
         raise ValueError(f"The {name} lens is for restricted mode only.")
@@ -195,7 +195,7 @@ def resolve(name: str, policy: UsePolicy | None) -> Lens:
 
 def presets_for(lens: str | Lens, policy: UsePolicy | None) -> list[Preset]:
     """The presets a lens offers; none in restricted mode (SPEC §5.7)."""
-    if policy is None or policy.restricted:
+    if is_restricted(policy):
         return []
     found = lens if isinstance(lens, Lens) else get(lens)
     return [PRESETS[n] for n in found.presets]

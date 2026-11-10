@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TextIO
 
-from zipographics import __version__, data, export, metrics, report, verticals
+from zipographics import __version__, data, export, lenses, metrics, report, verticals
 from zipographics.analysis import Analysis, Mode, analyze
 from zipographics.data import DataNotBuiltError
 from zipographics.filters import apply as apply_filters
@@ -98,9 +98,14 @@ def _policy(vertical: str | None, restricted: str | None) -> UsePolicy:
 def _merge(first: ParsedInput, second: ParsedInput) -> ParsedInput:
     zips = list(dict.fromkeys([*first.zips, *second.zips]))
     dropped = len(first.zips) + len(second.zips) - len(zips)
+    blank = second.blank_overlap
+    if second.is_zipcator:  # a typed ZIP the Zipcator file does not list has no overlap: full ZIP
+        extra = [z for z in first.zips if z not in second.overlaps and z not in blank]
+        blank = (*blank, *dict.fromkeys(extra))
     return dataclasses.replace(
         second,
         zips=tuple(zips),
+        blank_overlap=blank,
         repaired=(*first.repaired, *second.repaired),
         truncated=(*first.truncated, *second.truncated),
         invalid=(*first.invalid, *second.invalid),
@@ -164,6 +169,11 @@ def _profile(args: argparse.Namespace, out: TextIO, err: TextIO, now: datetime) 
     except DataNotBuiltError as exc:
         print(str(exc), file=err)
         return EXIT_NO_DATA
+    if args.lens is not None:
+        try:
+            lenses.resolve(args.lens, policy)
+        except ValueError as exc:
+            raise UsageError(str(exc)) from None
     modes: dict[str, Mode] = {"full": "full", "in-radius": "in_radius"}
     mode = modes.get(args.mode or "")
     try:
@@ -182,6 +192,8 @@ def _profile(args: argparse.Namespace, out: TextIO, err: TextIO, now: datetime) 
     for line in review_lines(a.summary):
         print(line, file=out)
     print(f"Restricted-use answer: {policy.answer}", file=out)
+    if args.restricted == "no" and verticals.is_locked(policy.vertical or ""):
+        print(f"Note: {verticals.LOCKED_NOTE} Your answer (no) was not used.", file=out)
     if policy.restricted:
         print(BANNER, file=out)
     print(f"Benchmark: {a.benchmark.name} ({a.benchmark.level})", file=out)

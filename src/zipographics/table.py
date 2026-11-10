@@ -34,7 +34,7 @@ def order(
         return a.zips[::-1] if descending else a.zips
     if key == ZIP:
         return tuple(sorted(a.zips, reverse=descending))
-    require_unrestricted(policy, "rank")
+    require_unrestricted(policy, "rank", a.policy)
     if key not in metrics.BY_ID:
         raise ValueError(f"Unknown order key: {key!r}")
     if index:

@@ -20,8 +20,13 @@ from zipographics.analysis import Analysis
 from zipographics.filters import FilterResult, describe
 from zipographics.models import UsePolicy
 from zipographics.profile import IndexValue, MetricValue
-from zipographics.restricted import AD_PLATFORM_NOTICE, NOT_LEGAL_ADVICE, require_unrestricted
-from zipographics.ui import TIER_LABELS
+from zipographics.restricted import (
+    AD_PLATFORM_NOTICE,
+    NOT_LEGAL_ADVICE,
+    is_restricted,
+    require_unrestricted,
+)
+from zipographics.ui import TIER_LABELS, clean_text
 from zipographics.verticals import RESTRICTED_QUESTION
 
 Style = Literal["comma", "newline"]
@@ -50,7 +55,7 @@ NOTE_GEONAMES = "ZIP-to-city names: GeoNames (geonames.org), licensed CC BY 4.0.
 # ------------------------------------------------------------------------- file names
 def file_stem(project: str | None) -> str:
     """A project name made safe for a Windows file name (or ``zipographics`` if nothing is left)."""
-    text = _ILLEGAL.sub("_", re.sub(r"\s+", " ", project or "")).strip(" .")
+    text = _ILLEGAL.sub("_", clean_text(project)).strip(" .")
     if not re.search(r"[^\W_]", text):  # nothing but punctuation and underscores is left
         return "zipographics"
     return text[:_MAX_STEM].rstrip(" .")
@@ -69,7 +74,7 @@ def filenames(project: str | None, today: date) -> dict[str, str]:
 # ------------------------------------------------------------------------- ZIP list
 def ad_platform_notice(policy: UsePolicy | None) -> str | None:
     """The notice shown above the ZIP list in restricted mode (and when no policy is known)."""
-    return AD_PLATFORM_NOTICE if policy is None or policy.restricted else None
+    return AD_PLATFORM_NOTICE if is_restricted(policy) else None
 
 
 def zip_list(
@@ -89,7 +94,7 @@ def zip_list(
     if style not in ("comma", "newline"):
         raise ValueError(f"Unknown ZIP list style {style!r}: use comma or newline.")
     entered = a.parsed.zips
-    if policy is None or policy.restricted:
+    if is_restricted(policy, a.policy):
         chosen: Sequence[str] = entered
     elif qualifying is not None:
         unknown = [z for z in qualifying if z not in a.zips]
@@ -122,7 +127,7 @@ def attestation(
     a: Analysis, result: FilterResult | None, *, now: datetime, version: str
 ) -> list[str]:
     """The footer / attestation lines (SPEC §5.6 item 4), identical in every export."""
-    restricted_on = a.policy.restricted
+    restricted_on = is_restricted(a.policy)
     if result is not None and result.active and not restricted_on:
         filters = "; ".join(describe(r) for r in result.rules)
     else:
@@ -224,9 +229,9 @@ def csv_text(
     Restricted mode (or no policy): input order always, no index columns, no Qualifies column;
     passing a filter result that has rules raises :class:`RestrictedUseError`.
     """
-    locked = policy is None or policy.restricted
+    locked = is_restricted(policy, a.policy)
     if locked and result is not None and result.active:
-        require_unrestricted(policy, "select")
+        require_unrestricted(policy, "select", a.policy)
     ids = list(metric_ids) if metric_ids is not None else list(default_metrics(a))
     zips = list(a.zips)
     if order is not None and not locked:
@@ -236,12 +241,22 @@ def csv_text(
     with_index = not locked
     qualifies = result is not None and result.active and not locked
 
+    unknown = [m for m in ids if m not in metrics.BY_ID]
+    if unknown:
+        raise ValueError(f"Unknown metric: {unknown[0]!r}")
+    if len(set(ids)) != len(ids):
+        dup = next(m for m in ids if ids.count(m) > 1)
+        raise ValueError(f"Metric {dup!r} is listed twice.")
+    indexes = {m: a.zip_index(m) for m in ids if with_index and metrics.BY_ID[m].indexable}
+    position = {z: i for i, z in enumerate(a.zips)}
+
     head: list[str] = ["Row type", "ZIP", "City", "County", "State"]
     if a.weighted:
         head += ["Overlap %", "In-radius households", "In-radius population"]
     for mid in ids:
         m = metrics.BY_ID[mid]
-        head += [_header(m), f"{m.name} MOE", f"{m.name} reliability"]
+        moe = f"{m.name} MOE (pts)" if m.unit == "percent" else f"{m.name} MOE"
+        head += [_header(m), moe, f"{m.name} reliability"]
         if with_index:
             head.append(f"{m.name} index")
     if qualifies:
@@ -259,17 +274,12 @@ def csv_text(
             *[defuse(facts[k] or "") for k in ("city", "county", "state")],
         ]
         if a.weighted:
-            w = a.weights.get(z) if a.weights is not None else None
             row += [
-                _num(w * 100, 6) if w is not None else "",
-                _num(a.in_radius(z, "hh"), 0) if w is not None else "",
-                _num(a.in_radius(z, "pop"), 0) if w is not None else "",
+                _num(a.overlap_pct(z), 6),
+                _num(a.in_radius(z, "hh"), 0),
+                _num(a.in_radius(z, "pop"), 0),
             ]
-        indexes = {}
-        for mid in ids:
-            if with_index and metrics.BY_ID[mid].indexable and mid not in indexes:
-                indexes[mid] = a.zip_index(mid)
-        pos = a.zips.index(z)
+        pos = position[z]
         for mid in ids:
             idx = indexes[mid][pos] if mid in indexes else None
             row += _cells(mid, a.value(z, mid), idx, with_index)

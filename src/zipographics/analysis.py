@@ -10,12 +10,12 @@ what may be *done* with them: see ``filters``, ``table`` and ``export``).
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 import pandas as pd
 
-from zipographics import data, metrics, profile, stats
+from zipographics import config, data, metrics, profile, stats
 from zipographics.lenses import Lens, resolve
 from zipographics.lenses import get as get_lens
 from zipographics.models import ParsedInput, ReviewSummary, UsePolicy
@@ -27,7 +27,9 @@ from zipographics.profile import (
     TradeAreaProfile,
     ZipTable,
 )
+from zipographics.restricted import is_restricted
 from zipographics.review import summarize
+from zipographics.ui import clean_text
 from zipographics.verticals import BY_NAME, CONTEXT_LENS
 
 Mode = Literal["full", "in_radius"]
@@ -52,6 +54,10 @@ class Analysis:
     vintage: int
     metadata: Mapping[str, object]
     attrs: pd.DataFrame  # recognized ZIPs: city, county, state
+    # per-metric index columns, computed once (filters and exports ask for each many times)
+    _index_cache: dict[str, list[IndexValue]] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     # ------------------------------------------------------------------ labels
     @property
@@ -85,12 +91,22 @@ class Analysis:
     def zip_index(self, metric_id: str) -> list[IndexValue]:
         """Per-ZIP index against the benchmark, aligned with ``zips``; the tier is the worse of
         the ZIP's and the benchmark's (SPEC §6.8)."""
+        cached = self._index_cache.get(metric_id)
+        if cached is not None:
+            return cached
         bench = self.bench.values[metric_id]
         values = self.table.index_column(metric_id, bench.estimate)
         col = self.table.columns[metric_id]
-        return [
+        out = [
             IndexValue(v, stats.worse_tier(col.tier[i], bench.tier)) for i, v in enumerate(values)
         ]
+        self._index_cache[metric_id] = out
+        return out
+
+    def overlap_pct(self, zip_code: str) -> float | None:
+        """The ZIP's overlap in percent (100 for a ZIP with no overlap value, which counts as a
+        full ZIP); None when in-radius estimates are off."""
+        return None if self.weights is None else self.weight_of(zip_code) * 100
 
     def share_of_benchmark(self, metric_id: str) -> float | None:
         """A count's share of the benchmark's total ("1.4 % of Florida's households")."""
@@ -125,6 +141,8 @@ def analyze(
         raise ValueError(summary.blocking[0])
     zips = summary.recognized
 
+    if mode not in (None, "full", "in_radius"):
+        raise ValueError(f"Unknown estimate mode {mode!r}: use full or in_radius.")
     if mode is None:
         mode = "in_radius" if parsed.is_zipcator and parsed.overlaps else "full"
     weights: dict[str, float] | None = None
@@ -143,12 +161,12 @@ def analyze(
     bench = profile.benchmark_profile(art.benchmarks, ref.level, ref.geo_id, metric_ids=ids)
     if lens is not None:
         chosen = resolve(lens, policy)
-    elif policy.restricted:
+    elif is_restricted(policy):
         chosen = get_lens(CONTEXT_LENS)
     else:
         vertical = BY_NAME.get(policy.vertical or "")
         chosen = get_lens(vertical.lens if vertical else "General")
-    name = (project_name or "").strip() or None
+    name = clean_text(project_name, config.MAX_PROJECT_NAME) or None
     return Analysis(
         policy=policy,
         project_name=name,

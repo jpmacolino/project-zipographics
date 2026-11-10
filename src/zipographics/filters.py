@@ -106,10 +106,12 @@ def _judge(a: Analysis, rule: Rule, i: int, zip_code: str) -> tuple[bool, bool, 
     bound = coded_bound(est, value.code)
     if value.code == "top":  # the true value is at least `bound`
         if rule.op == ">=":
-            return bound >= rule.value, False, False
+            ok = bound >= rule.value
+            return ok, False, not ok  # below the bound's reach the true value may still be >= v
         return False, False, bound <= rule.value  # at most v: unknowable; below the bound: no
     if rule.op == "<=":  # bottom-coded: the true value is at most `bound`
-        return bound <= rule.value, False, False
+        ok = bound <= rule.value
+        return ok, False, not ok
     return False, False, bound >= rule.value
 
 
@@ -126,7 +128,7 @@ def apply(
     missing) and ``rules`` is not empty. An empty list means no filtering: every ZIP qualifies.
     """
     if rules:
-        require_unrestricted(policy, "filter")
+        require_unrestricted(policy, "filter", a.policy)
         validate(rules)
     hh = a.table.columns["hh"].est if "hh" in a.table.columns else None
     matches: dict[str, ZipMatch] = {}

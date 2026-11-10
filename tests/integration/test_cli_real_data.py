@@ -86,3 +86,38 @@ def test_the_report_is_self_contained_with_the_real_map(tmp_path: Path) -> None:
 def test_puerto_rico_zips_are_repaired_and_get_the_pr_benchmark() -> None:
     code, out, _ = run(["profile", "601", "603", "610", "612", *HOME])
     assert code == 0 and "4 repaired" in out and "Benchmark: Puerto Rico" in out
+
+
+def test_a_single_zip_report_renders_with_the_real_map(tmp_path: Path) -> None:
+    # Phase 5 QA HIGH 1: one ZIP (one distinct map value) crashed the report with an IndexError
+    path = tmp_path / "one.html"
+    code, _, err = run(["profile", "33602", *HOME, "--report", str(path)])
+    html = path.read_text(encoding="utf-8")
+    section = html.split('id="map"')[1].split("</section>")[0]
+    assert code == 0 and err == "" and "<svg" in section
+
+
+def test_zips_with_null_values_render_with_the_real_map(tmp_path: Path) -> None:
+    # Phase 5 QA HIGH 2: ZIPs with no median age / owner share mixed with valid ones crashed it
+    path = tmp_path / "nulls.html"
+    code, _, err = run(
+        ["profile", "08095", "10199", "33602", "33606", *HOME, "--report", str(path)]
+    )
+    section = path.read_text(encoding="utf-8").split('id="map"')[1].split("</section>")[0]
+    assert code == 0 and err == "" and "<svg" in section
+
+
+def test_a_thousand_real_zips_render_a_report_and_a_csv_quickly(tmp_path: Path) -> None:
+    import time
+
+    prof = pd.read_parquet(DATA / "zcta_profile.parquet", columns=["zip", "B01003_001_e"])
+    zips = list(prof.loc[prof["B01003_001_e"] > 0, "zip"].sample(1000, random_state=3))
+    f = tmp_path / "zips.txt"
+    f.write_text("\n".join(zips), encoding="utf-8")
+    html, csv = tmp_path / "big.html", tmp_path / "big.csv"
+    start = time.perf_counter()
+    code, _, err = run(
+        ["profile", "--file", str(f), *HOME, "--report", str(html), "--csv", str(csv)]
+    )
+    assert code == 0 and err == "" and time.perf_counter() - start < 30
+    assert html.read_text(encoding="utf-8").count("<tr") >= 1000

@@ -8,6 +8,7 @@ a non-core variable, a top-coded median, and a controlled-estimate MOE.
 from __future__ import annotations
 
 import io
+import json
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -300,3 +301,49 @@ class FileSession:
         if url not in self.files:
             return FakeDownload(b"not found", 404)
         return FakeDownload(self.files[url])
+
+
+# ---------------------------------------------------------------------------- the whole API
+class E2ESession(FileSession):
+    """Answers Census API URLs (variables.json and table queries) from a :class:`Synth`, plus the
+    downloadable files. ``mode`` sabotages the API: ``invalid_key`` (HTML page), ``blocked`` (HTTP
+    403 from a proxy) or ``server_error`` (HTTP 500)."""
+
+    def __init__(self, tmp_path: Path, synth: Synth | None = None, mode: str = "ok") -> None:
+        super().__init__(tmp_path)
+        self.synth = synth or Synth()
+        self.mode = mode
+        self.urls_with_key = 0
+
+    def get(self, url: str, **kwargs: Any) -> Any:
+        if not url.startswith("https://api.census.gov/"):
+            return super().get(url, **kwargs)
+        self.calls.append(url)
+        if "key=" in url:
+            self.urls_with_key += 1
+        if self.mode == "blocked":
+            return FakeDownload(b"Forbidden by proxy policy", 403)
+        if self.mode == "server_error":
+            return FakeDownload(b"internal error", 500)
+        if url.split("?")[0].endswith("variables.json"):
+            profile = "/acs5/profile/" in url
+            meta = PROFILE_META if profile else DETAILED_META
+            body = {"variables": {k: dict(v) for k, v in meta.items()}}
+            return FakeDownload(json.dumps(body).encode())
+        if self.mode == "invalid_key":
+            return FakeDownload(b"<html><body>Invalid Key</body></html>", 200)
+        query = dict(p.split("=", 1) for p in url.split("?", 1)[1].split("&"))
+        names = query["get"].split(",")
+        dataset = "profile" if "/acs5/profile?" in url else "detailed"
+        level = (
+            "zcta" if query["for"].startswith("zip%20code") else
+            "county" if query["for"].startswith("county") else
+            "us" if query["for"].startswith("us") else "state"
+        )  # fmt: skip
+        table = self.synth.table(dataset, level)
+        keys = [
+            c for c in ("zip code tabulation area", "state", "county", "us") if c in table.columns
+        ]
+        body = table[[*names, *keys]].astype(object).where(table.notna(), None).values.tolist()
+        rows = [[*names, *keys], *body]
+        return FakeDownload(json.dumps(rows).encode())

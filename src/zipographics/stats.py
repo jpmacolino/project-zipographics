@@ -23,7 +23,8 @@ Bound = tuple[float, float]  # (lower, upper) of a bracket; lower may be -inf, u
 
 _TIER_ORDER: dict[Tier, int] = {"good": 0, "caution": 1, "unreliable": 2}
 _EPS = 1e-9  # float noise tolerance at the tier boundaries and bracket edges
-_NOISE = 1e-12  # relative size below which a negative radicand is rounding, not a sign
+_INDEX_LIMIT = 1e9  # an index this large is a near-zero benchmark, not information
+_NOISE = 1e-12  # relative size below which a radicand's sign is rounding, not information
 
 
 def se(moe: float | None) -> float | None:
@@ -58,10 +59,14 @@ def moe_proportion(
     try:
         p = x / y
         plus = mx**2 + p**2 * my**2
+        if not math.isfinite(plus):
+            return None  # p overflowed: the denominator is absurdly small
         rad = mx**2 - p**2 * my**2
         if rad < -_NOISE * plus:
             rad = plus  # "substitute a 'plus' for the 'minus'"
-        out = math.sqrt(max(rad, 0.0)) / y
+        elif rad < _NOISE * plus:
+            rad = 0.0  # equal relative MOEs: the true radicand is 0, whatever the rounding says
+        out = math.sqrt(rad) / y
     except OverflowError:
         return None
     return out if math.isfinite(out) else None
@@ -126,7 +131,9 @@ def index_value(value: float | None, benchmark: float | None) -> int | None:
         return None
     # round away float noise first: 100 * 0.145 is 14.499999999999998, which must index as 15
     scaled = round(100 * value / benchmark, 9) + 0.5
-    return math.floor(scaled) if math.isfinite(scaled) else None
+    if not math.isfinite(scaled) or abs(scaled) > _INDEX_LIMIT:
+        return None
+    return math.floor(scaled)
 
 
 # ------------------------------------------------------------------------------ medians

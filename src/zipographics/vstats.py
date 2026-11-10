@@ -15,6 +15,7 @@ from zipographics.config import CV_CAUTION, CV_GOOD, Z90
 F = NDArray[np.float64]
 _EPS = 1e-9
 _NOISE = 1e-12
+_INDEX_LIMIT = 1e9  # same sanity bound as stats.index_value
 
 
 def _unknown(*arrays: F) -> NDArray[np.bool_]:
@@ -30,9 +31,11 @@ def moe_proportion(x: F, mx: F, y: F, my: F) -> F:
         p = x / y
         plus = mx**2 + p**2 * my**2
         rad = mx**2 - p**2 * my**2
-        rad = np.where(rad < -_NOISE * plus, plus, np.maximum(rad, 0.0))
+        noise = _NOISE * plus
+        rad = np.where(rad < -noise, plus, np.where(rad < noise, 0.0, rad))
         out = np.sqrt(rad) / y
-    return np.where(_unknown(x, mx, y, my) | ~(y > 0) | ~np.isfinite(out), np.nan, out)
+    bad = _unknown(x, mx, y, my) | ~(y > 0) | ~np.isfinite(out) | ~np.isfinite(plus)
+    return np.where(bad, np.nan, out)
 
 
 def moe_ratio(x: F, mx: F, y: F, my: F) -> F:
@@ -71,4 +74,4 @@ def index_values(est: F, bench: float | None) -> F:
         return np.full(est.shape, np.nan)
     with np.errstate(over="ignore", invalid="ignore"):
         out = np.floor(np.round(100 * est / bench, 9) + 0.5)
-    return np.where(np.isnan(est) | ~np.isfinite(out), np.nan, out)
+    return np.where(np.isnan(est) | ~np.isfinite(out) | (np.abs(out) > _INDEX_LIMIT), np.nan, out)

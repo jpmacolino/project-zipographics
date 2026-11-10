@@ -786,8 +786,14 @@ def main(
     *,
     session: Any = None,
     registry: Registry | None = None,
+    min_rows: int = MIN_ROWS,
+    client_options: Mapping[str, Any] | None = None,
 ) -> int:
-    """The build's command line. Returns the exit code (0, 2, 3, 4 or 5); never a traceback."""
+    """The build's command line. Returns the exit code (0, 2, 3, 4 or 5); never a traceback.
+
+    ``session``, ``registry``, ``min_rows`` and ``client_options`` (clock, sleeper, jitter) are
+    hooks for tests; the real command line never passes them.
+    """
     parser = _parser()
     try:
         args = parser.parse_args(list(argv) if argv is not None else None)
@@ -813,7 +819,11 @@ def main(
         client = None
         if args.only in ("acs", "all"):
             client = CensusClient(
-                key, cache_root=data_dir / "raw", session=http, refresh=args.refresh
+                key,
+                cache_root=data_dir / "raw",
+                session=http,
+                refresh=args.refresh,
+                **dict(client_options or {}),
             )
         zc_env = (env.get(config.ZIPCATOR_PARQUET_ENV) or "").strip()
         build(
@@ -827,6 +837,7 @@ def main(
             tolerance=args.tolerance,
             zipcator_parquet=Path(zc_env) if zc_env else None,
             registry=registry,
+            min_rows=min_rows,
         )
         return 0
     except (MissingKeyError, RejectedKeyError) as exc:

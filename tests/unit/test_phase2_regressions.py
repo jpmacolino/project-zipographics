@@ -178,3 +178,41 @@ def test_county_ids_must_be_five_digits_and_missing_names_fall_back() -> None:
     opts = profile.benchmark_options(["33602", "33603", "33604"], facts)
     assert [r.geo_id for r in opts.counties] == ["12057", "12103"]  # "057" is ignored
     assert opts.counties[1].name == "12103"  # a blank name falls back to the id, never "nan"
+
+
+def test_a_zero_radicand_is_zero_on_both_sides_of_float_noise() -> None:
+    # Hypothesis found x=41199 ±41199 of y=53289 ±53289 (equal relative MOEs): the true radicand is
+    # 0, floats give ±1e-16, so the result was 9e-9 under one scaling and exactly 0 under another.
+    arr = lambda v: np.array([float(v)])  # noqa: E731
+    for w in (1.0, 0.01, 3.0, 0.37):
+        scalar = stats.moe_proportion(41199 * w, 41199 * w, 53289 * w, 53289 * w)
+        vector = vstats.moe_proportion(
+            arr(41199 * w), arr(41199 * w), arr(53289 * w), arr(53289 * w)
+        )
+        assert scalar == 0.0
+        assert float(vector[0]) == 0.0
+
+
+def test_overflow_in_the_proportion_formula_is_unknown_in_both_implementations() -> None:
+    # Hypothesis: x=1, y=6e-163 makes p^2 overflow; the scalar said None, the vector said 0.0
+    arr = lambda v: np.array([float(v)])  # noqa: E731
+    assert stats.moe_proportion(1.0, 0.0, 6.379018478957434e-163, 1.0) is None
+    got = vstats.moe_proportion(arr(1.0), arr(0.0), arr(6.379018478957434e-163), arr(1.0))
+    assert np.isnan(got[0])
+
+
+def test_an_absurd_index_is_unknown_in_both_implementations() -> None:
+    # est=2e-16 against a denormal benchmark gave ~1e301 with different float rounding in each
+    assert stats.index_value(2.220446049250313e-16, 2.2250738585e-313) is None
+    got = vstats.index_values(np.array([2.220446049250313e-16]), 2.2250738585e-313)
+    assert np.isnan(got[0])
+    assert stats.index_value(5.0, 1.0) == 500  # ordinary values are unaffected
+
+
+@pytest.mark.parametrize("y", [5e-324, 2.225073858507e-311, 1.1125369292536007e-308, 6e-163])
+def test_a_tiny_denominator_is_unknown_in_both_implementations(y: float) -> None:
+    # p = x / y overflows to inf; the scalar's noise clamp used to turn -inf into 0.0
+    arr = lambda v: np.array([float(v)])  # noqa: E731
+    for x in (1.0, 2.0, 4.0):
+        assert stats.moe_proportion(x, 0.0, y, 1.0) is None
+        assert np.isnan(vstats.moe_proportion(arr(x), arr(0.0), arr(y), arr(1.0))[0])

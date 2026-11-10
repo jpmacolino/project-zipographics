@@ -39,6 +39,16 @@ DEFAULT_VINTAGE = 2024
 MIN_ZCTA_ROWS = 33_000
 #: A core KPI variable must be non-null for at least this share of ZCTAs with population > 0.
 COVERAGE_FLOOR = 0.95
+#: A *published median* is suppressed by the ACS for small areas (measured on the real 2020-2024
+#: data: 92 % of ZCTAs with population have a published median household income, 3 % of those with
+#: under 10 households), so it gets a lower floor than counts and shares (DECISIONS B16).
+MEDIAN_COVERAGE_FLOOR = 0.90
+#: At most this share of ZCTAs may have a primary county with no ACS county row. In 2020-2024 that
+#: is Connecticut only (the ACS uses planning regions; the 2020 relationship file uses counties).
+COUNTY_GAP_LIMIT = 0.02
+#: The boundary file also holds island-area ZCTAs (VI, GU, MP, AS) that have no ACS data; at most
+#: this many polygons without a profile row are dropped, more means the wrong file (DECISIONS B16).
+MAX_GEOMETRY_EXTRA = 25
 #: Metrics every dashboard leads with (SPEC §5.5); their variables are held to COVERAGE_FLOOR.
 CORE_METRICS = ("pop", "hh", "median_hh_income", "owner", "hh_kids")
 #: Environment variable naming Zipcator's built ``zcta.parquet`` to reuse for the map (D6).

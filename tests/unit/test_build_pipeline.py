@@ -438,9 +438,12 @@ def test_a_mismatched_zipcator_file_falls_back_to_the_census_download(tmp_path: 
     assert "zip" in meta["geometry"]["zipcator_parquet_skipped"]
 
 
-def test_geometry_with_zips_missing_from_the_profile_fails_the_build(tmp_path: Path) -> None:
-    session = FileSession(tmp_path, geo_zips=[*ZCTAS, "99999"])
-    with pytest.raises(BuildError, match="99999"):
+def test_a_boundary_file_that_does_not_match_the_profile_fails_the_build(tmp_path: Path) -> None:
+    # a few unmatched polygons are island areas and are dropped (test_realdata_rules.py); many
+    # mean the wrong file
+    extras = [f"{30000 + i}" for i in range(30)]
+    session = FileSession(tmp_path, geo_zips=[*ZCTAS, *extras])
+    with pytest.raises(BuildError, match="polygons with no profile row"):
         run_build(tmp_path, session=session)
 
 

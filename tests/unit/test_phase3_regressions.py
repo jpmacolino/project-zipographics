@@ -569,11 +569,11 @@ def test_geonames_us_wins_over_pr_for_a_zip_in_both_files(tmp_path: Path) -> Non
     assert art.profile.loc["02108", "city"] == "Boston"
 
 
-def test_geo_only_against_a_stale_profile_rejects_extra_zips(tmp_path: Path) -> None:
+def test_geo_only_against_a_stale_profile_rejects_a_mismatched_map(tmp_path: Path) -> None:
     build(tmp_path / "data", client=FakeClient(), session=FileSession(tmp_path), registry=REGISTRY,
           min_rows=5, only="acs")  # fmt: skip
-    session = FileSession(tmp_path, geo_zips=[*ZCTAS, "99999"])
-    with pytest.raises(BuildError, match="99999"):
+    session = FileSession(tmp_path, geo_zips=[*ZCTAS, *[f"{30000 + i}" for i in range(30)]])
+    with pytest.raises(BuildError, match="polygons with no profile row"):
         build(
             tmp_path / "data",
             client=None,

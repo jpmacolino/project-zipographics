@@ -383,6 +383,7 @@ class AcsArtifacts:
     resolved: dict[str, ResolvedVar]
     sentinel_counts: dict[str, int]
     sources: list[dict[str, Any]]
+    county_gaps: dict[str, Any] = field(default_factory=dict)
 
 
 def acs_artifacts(
@@ -449,7 +450,21 @@ def acs_artifacts(
         _source_record("geonames_us", sources.geonames_us_url, us_path),
         _source_record("geonames_pr", sources.geonames_pr_url, pr_path),
     ]
-    return AcsArtifacts(profile, benchmarks, resolved, dict(totals), source_records)
+    county_ids = set(benchmarks.loc[benchmarks["geo_level"] == "county", "geo_id"])
+    orphan = profile["county_fips"].notna() & ~profile["county_fips"].isin(county_ids)
+    gaps: dict[str, Any] = {
+        "zctas": int(orphan.sum()),
+        "county_fips": sorted(set(profile.loc[orphan, "county_fips"])),
+        "states": sorted(set(profile.loc[orphan, "state"].dropna())),
+    }
+    if gaps["zctas"]:
+        logger.info(
+            "%d ZCTAs (%s) have a primary county with no ACS county row; they keep the county "
+            "name but get no county benchmark",
+            gaps["zctas"], ", ".join(gaps["states"]),
+        )  # fmt: skip
+        profile.loc[orphan, "county_fips"] = None
+    return AcsArtifacts(profile, benchmarks, resolved, dict(totals), source_records, gaps)
 
 
 # ----------------------------------------------------------------------------- validation
@@ -511,6 +526,15 @@ def validate_artifacts(
         missing = sorted(wanted - have)
         if missing:
             problems.append(f"no {level} benchmark for {', '.join(missing[:5])}")
+    if "county_fips" in profile.columns and "county" in profile.columns and len(profile):
+        # a county name with no county id means the ACS has no county row for that ZCTA's county
+        gap = float((profile["county"].notna() & profile["county_fips"].isna()).mean())
+        if gap > config.COUNTY_GAP_LIMIT:
+            problems.append(
+                f"{gap:.1%} of ZCTAs have no county benchmark "
+                f"(limit {config.COUNTY_GAP_LIMIT:.0%}); "
+                "the county relationship join may be broken"
+            )
     if "state_fips" in profile.columns and len(profile):
         gap = float(profile["state_fips"].isna().mean())
         if gap > _STATE_GAP_LIMIT:
@@ -529,10 +553,13 @@ def validate_artifacts(
                 coverage[key] = float(populated[col].notna().mean()) if len(populated) else 0.0
         for key in _core_keys(registry):
             share = coverage.get(key, 0.0)
-            if share < config.COVERAGE_FLOOR:
+            is_median = registry.variables[key].is_median
+            floor = config.MEDIAN_COVERAGE_FLOOR if is_median else config.COVERAGE_FLOOR
+            if share < floor:
+                kind = "published median" if is_median else "core KPI variable"
                 problems.append(
-                    f"core KPI variable {key} is non-null for only {share:.1%} of ZCTAs with "
-                    f"population (need {config.COVERAGE_FLOOR:.0%})"
+                    f"{kind} {key} is non-null for only {share:.1%} of ZCTAs with "
+                    f"population (need {floor:.0%})"
                 )
     else:
         problems.append(f"column {pop_col} is missing, so coverage cannot be checked")
@@ -637,6 +664,15 @@ def _publish(items: Sequence[tuple[Path, Callable[[Path], None]]]) -> None:
 GEO_COVERAGE_FLOOR = 0.95
 
 
+def drop_unprofiled(
+    geo: gpd.GeoDataFrame, profile_zips: set[str]
+) -> tuple[gpd.GeoDataFrame, list[str]]:
+    """Drop polygons that have no profile row (island-area ZCTAs: the ACS has no data for them)
+    and return the dropped ZIPs in file order."""
+    keep = geo["zip"].isin(profile_zips)
+    return geo[keep].reset_index(drop=True), [str(z) for z in geo.loc[~keep, "zip"]]
+
+
 def geometry_problems(geo: gpd.GeoDataFrame, profile_zips: set[str] | None) -> list[str]:
     """Checks on the map: no duplicate or null geometries; with a profile, ZIPs ⊆ profile and
     near-complete coverage of it."""
@@ -671,6 +707,7 @@ def _acs_metadata(
         "sentinel_counts": art.sentinel_counts,
         "code_cross_check": _code_cross_check(art.profile, registry),
         "zcta_without_state": int(art.profile["state_fips"].isna().sum()),
+        "county_benchmark_gaps": art.county_gaps,
     }
 
 
@@ -722,6 +759,27 @@ def build(
         geo, geo_info, geo_records = _geometry(
             sources, raw_dir, session, refresh, tolerance, zipcator_parquet, now
         )
+        known = (
+            set(art.profile.index)
+            if art is not None
+            else (
+                set(pd.read_parquet(profile_path, columns=["zip"])["zip"])
+                if profile_path.exists()
+                else None
+            )
+        )
+        if known is not None:
+            geo, dropped = drop_unprofiled(geo, known)
+            if dropped:
+                geo_info["dropped_without_profile"] = dropped[:50]
+                logger.info("dropped %d polygons with no ACS data (island areas)", len(dropped))
+            if len(dropped) > config.MAX_GEOMETRY_EXTRA:
+                raise BuildError(
+                    f"output validation failed: {len(dropped)} polygons with no profile row "
+                    f"({', '.join(dropped[:5])}, ...); the boundary file does not match the "
+                    "ACS data. Nothing was written.",
+                    5,
+                )
     elif geo_path.exists():
         geo = gpd.read_parquet(geo_path)  # check the new profile against the existing map
 

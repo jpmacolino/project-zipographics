@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Mapping
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -119,16 +120,18 @@ def clean_frame(
     if not all(isinstance(z, str) for z in raw[key]):
         # str() on a number would silently drop leading zeros (2108 for 02108)
         raise ValueError(f"geography key column {key!r} must hold strings, never numbers")
-    out = pd.DataFrame(index=pd.Index(raw[key].astype(str), name="zip"))
+    index = pd.Index(raw[key].astype(str), name="zip")
+    columns: dict[str, Any] = {}
     totals: Counter[str] = Counter()
     for var, is_median in variables.items():
         est, err, counts = clean_pair(raw[f"{var}E"], raw[f"{var}M"])
-        out[f"{var}_e"] = est.to_numpy()
-        out[f"{var}_m"] = err.to_numpy()
+        columns[f"{var}_e"] = est.to_numpy()
+        columns[f"{var}_m"] = err.to_numpy()
         totals.update(counts)
         if is_median:
             if f"{var}EA" not in raw.columns:
                 # without the annotation a top-coded median would pass as an exact number
                 raise ValueError(f"median variable {var} needs its annotation column {var}EA")
-            out[f"{var}_code"] = median_code(raw[f"{var}EA"]).to_numpy()
+            columns[f"{var}_code"] = median_code(raw[f"{var}EA"]).to_numpy()
+    out = pd.DataFrame(columns, index=index)  # built at once: no fragmented frame
     return out, dict(totals)

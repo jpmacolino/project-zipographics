@@ -45,7 +45,10 @@ def findings(tmp_path: Path, files: dict[str, str]) -> list[str]:
         ("docs/notes.md", f"curl 'https://api.census.gov/data?get=X&KEY={FAKE}'\n"),
         ("docs/n2.md", f"https://x/?get=X&key%3D{FAKE}\n"),
         ("docs/n3.md", f"CENSUS_API_KEY={FAKE}\n"),
-        ("docs/n4.md", "CENSUS_API_KEY = 'abcdefgh12345678'\n"),
+        (
+            "docs/n4.md",
+            "CENSUS_API_" + "KEY = " + "'abcdefgh" + "12345678'\n",
+        ),  # not a literal here
         ("prod.env", "anything\n"),
         (".envrc", "export X=1\n"),
         (".env.local", "X=1\n"),

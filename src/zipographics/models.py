@@ -118,3 +118,22 @@ class ReviewSummary:
     @property
     def can_continue(self) -> bool:
         return not self.blocking
+
+
+#: Comparison used by a filter rule and the basis it compares (SPEC §5.5).
+Op = Literal[">=", "<="]
+Basis = Literal["value", "index"]
+
+
+@dataclass(frozen=True, slots=True)
+class Rule:
+    """One filter rule: ``metric op value`` on the ZIP's value or its index vs the benchmark.
+
+    Shares are fractions (0.6 means 60 %); medians, means and ratios are in their own units;
+    an index is the number itself (120).
+    """
+
+    metric: str
+    op: Op
+    value: float
+    basis: Basis = "value"

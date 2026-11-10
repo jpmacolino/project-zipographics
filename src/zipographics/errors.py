@@ -9,3 +9,7 @@ class BuildError(Exception):
     def __init__(self, message: str, exit_code: int = 5) -> None:
         super().__init__(message)
         self.exit_code = exit_code
+
+
+class RestrictedUseError(Exception):
+    """A selection, ranking or filtering action was attempted in restricted mode (SPEC §5.7)."""

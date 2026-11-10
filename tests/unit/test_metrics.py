@@ -29,6 +29,7 @@ EXPECTED: dict[str, tuple[str, str | None]] = {
             "age_75p",
             "age_18_34",
             "age_18_44",
+            "age_25_44",
             "age_65p",
         ]
     },
@@ -136,7 +137,7 @@ def test_the_registry_has_exactly_the_appendix_c_metrics() -> None:
     ids = [x.id for x in m.REGISTRY]
     assert len(ids) == len(set(ids)), "duplicate metric id"
     assert set(ids) == set(EXPECTED)
-    assert len(ids) == 85  # the 74 of Appendix C plus 11 chart categories (B17)
+    assert len(ids) == 86  # the 74 of Appendix C, 11 chart categories (B17) and age_25_44 (D10)
 
 
 def test_kinds_and_tags_match_appendices_b_and_c() -> None:
@@ -340,6 +341,7 @@ def test_derived_age_groups_are_unions_of_the_bands() -> None:
         return set(spec.num)
 
     assert cells("age_18_34") == cells("age_18_24") | cells("age_25_34")
+    assert cells("age_25_44") == cells("age_25_34") | cells("age_35_44")
     assert cells("age_18_44") == cells("age_18_34") | cells("age_35_44")
     assert cells("age_65p") == cells("age_65_74") | cells("age_75p")
     assert cells("age_0_4") | cells("age_5_17") == cells("age_0_17")

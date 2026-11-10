@@ -325,6 +325,7 @@ for _id, _name, _rows in [
     ("age_75p", "Age 75 and over", (23, 24, 25)),
     ("age_18_34", "Age 18-34", (7, 8, 9, 10, 11, 12)),
     ("age_18_44", "Age 18-44", (7, 8, 9, 10, 11, 12, 13, 14)),
+    ("age_25_44", "Age 25-44", (11, 12, 13, 14)),
     ("age_65p", "Age 65 and over", (20, 21, 22, 23, 24, 25)),
 ]:
     _share(_id, _name, "age", _both_sexes(*_rows), _AGE_DEN, "total population",

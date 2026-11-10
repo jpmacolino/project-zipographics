@@ -225,3 +225,17 @@ def median_moe(
     if lo is None or hi is None or lo[1] != "none" or hi[1] != "none":
         return None
     return Z90 * (hi[0] - lo[0]) / 2
+
+
+def coded_bound(estimate: float, code: MedianCode) -> float:
+    """The published bound a top- or bottom-coded median stands for (DECISIONS V7).
+
+    The API stores the bound shifted by one (250,001 for "$250,000+", 2,499 for "$2,500-", year
+    built 2021 for "2020+" and 1938 for "1939-"): a top-coded median is at or above
+    ``estimate - 1``, a bottom-coded one at or below ``estimate + 1``.
+    """
+    if code == "top":
+        return estimate - 1
+    if code == "bottom":
+        return estimate + 1
+    return estimate

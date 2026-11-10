@@ -49,9 +49,10 @@ class Scenario:
 
     def __repr__(self) -> str:  # a failing example must print small, not two dataframes
         a = self.analysis
+        rules = None if self.result is None else self.result.rules
         return (
-            f"Scenario(zips={a.zips}, policy={a.policy.answer!r}, mode={a.mode}, lens={a.lens.name}, "
-            f"rules={None if self.result is None else self.result.rules}, geo={self.geo is not None})"
+            f"Scenario(zips={a.zips}, policy={a.policy.answer!r}, mode={a.mode}, "
+            f"lens={a.lens.name}, rules={rules}, geo={self.geo is not None})"
         )
 
 

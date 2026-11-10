@@ -190,3 +190,7 @@ thresholds. Counsel review of the vertical mapping and restricted list is still 
 wide internal use.
 
 ## Made during build
+
+**B1 (2026-11-09). `uv` is installed but not on the Git Bash PATH.** `uv` 0.13.5 lives in
+`C:\Users\<user>\.local\bin`. Claude Code's Bash tool needs `export PATH="$HOME/.local/bin:$PATH"`
+per command; the installer was not needed (and failed harmlessly because `uv.exe` was in use).

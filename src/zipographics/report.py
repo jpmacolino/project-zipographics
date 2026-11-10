@@ -18,14 +18,13 @@ from typing import Any
 
 import geopandas as gpd
 import matplotlib as mpl
-import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch
 
-from zipographics import charts, metrics
+from zipographics import charts, kpis, mapview, metrics
 from zipographics.analysis import Analysis
 from zipographics.charts import ChartData
 from zipographics.export import NOTE_CODED, NOTE_MOE, NOTE_ZIP, attestation, default_metrics
@@ -36,7 +35,6 @@ from zipographics.review import review_lines
 from zipographics.ui import (
     DAGGER,
     DASH,
-    TIER_LABELS,
     fmt_moe,
     fmt_number,
     fmt_value,
@@ -44,7 +42,6 @@ from zipographics.ui import (
 
 _TRADE = "#1f4e79"
 _BENCH = "#a3acb8"
-_NEUTRAL = "#cfd6de"
 _MATCH_EDGE = "#b3261e"
 CHECK = "\N{CHECK MARK}"
 _SVG_RC: dict[Any, Any] = {
@@ -147,44 +144,23 @@ def _chart_svg(d: ChartData) -> str:
 def _shade(ax: Axes, sub: gpd.GeoDataFrame, a: Analysis, metric_id: str) -> None:
     """Quantile-binned fills with a patch legend (no raster colorbar, so the SVG stays vector).
 
-    A ZIP with no value, or a top/bottom-coded one (a bound, not an exact number), is drawn
-    neutral. One distinct value makes one bin; no values at all make a plain neutral map.
+    The classes are :func:`mapview.classify`'s, so this map and the interactive one agree. A ZIP
+    with no value, or a top/bottom-coded one (a bound, not an exact number), is drawn neutral.
     """
     metric = metrics.BY_ID[metric_id]
-    vals = np.array([_exact(a, z, metric_id) for z in sub["zip"]])
-    finite = vals[~np.isnan(vals)]
-    neutral = to_rgba(_NEUTRAL)
-    if finite.size == 0:
-        sub.plot(ax=ax, color=[neutral] * len(sub), edgecolor="#ffffff", linewidth=0.6)
-        return
-    edges = np.unique(np.quantile(finite, np.linspace(0, 1, 6)))
-    bins = max(len(edges) - 1, 1)
-    which = np.clip(np.digitize(vals, edges[1:-1], right=True), 0, bins - 1)
-    cmap = mpl.colormaps["Blues"]
-    shades = [cmap(0.3 + 0.65 * i / max(bins - 1, 1)) for i in range(bins)]
-    faces = [neutral if np.isnan(v) else shades[int(w)] for v, w in zip(vals, which, strict=True)]
+    cls = mapview.classify(a, [str(z) for z in sub["zip"]], metric_id)
+    neutral = to_rgba(mapview.NEUTRAL)
+    faces = [neutral if b is None else to_rgba(cls.shades[b]) for b in cls.bins]
     sub.plot(ax=ax, color=faces, edgecolor="#ffffff", linewidth=0.6)
-    labels = (
-        [
-            f"{fmt_number(metric, edges[i])} to {fmt_number(metric, edges[i + 1])}"
-            for i in range(bins)
-        ]
-        if len(edges) > 1
-        else [fmt_number(metric, edges[0])]
-    )
+    if not cls.shades:
+        return
     # "$" starts mathtext in matplotlib: escape it so dollar labels stay dollar labels
     handles = [
-        Patch(facecolor=shades[i], label=lb.replace("$", chr(92) + "$"))
-        for i, lb in enumerate(labels)
+        Patch(facecolor=cls.shades[i], label=lb.replace("$", chr(92) + "$"))
+        for i, lb in enumerate(cls.labels)
     ]
     ax.legend(handles=handles, title=metric.name, fontsize=7, title_fontsize=7,
               frameon=False, loc="center left", bbox_to_anchor=(1.0, 0.5))  # fmt: skip
-
-
-def _exact(a: Analysis, zip_code: str, metric_id: str) -> float:
-    """The value to shade by, or NaN when unknown or only a published bound (SPEC section 6.2)."""
-    v = a.value(zip_code, metric_id)
-    return float("nan") if v.estimate is None or v.code != "none" else float(v.estimate)
 
 
 def _map_svg(
@@ -201,7 +177,7 @@ def _map_svg(
     fig = Figure(figsize=(6.4, 4.6))
     ax = fig.subplots()
     if neutral:
-        sub.plot(ax=ax, color=_NEUTRAL, edgecolor="#ffffff", linewidth=0.6)
+        sub.plot(ax=ax, color=mapview.NEUTRAL, edgecolor="#ffffff", linewidth=0.6)
     else:
         _shade(ax, sub, a, metric_id)
         if result is not None and result.active:
@@ -216,31 +192,14 @@ def _map_svg(
 
 
 # ------------------------------------------------------------------------------------ html
-def _kpi(a: Analysis, mid: str) -> str:
-    m = metrics.BY_ID[mid]
-    v = a.trade.values[mid]
-    mark = f" {DAGGER}" if v.tier == "unreliable" else ""
-    subs: list[str] = []
-    moe = fmt_moe(m, v)
-    if moe:
-        subs.append(_e(moe))
-    bench = _e(a.benchmark.name)
-    if m.indexable:
-        idx = a.index.get(mid)
-        if idx is not None and idx.value is not None:
-            subs.append(f"Index {idx.value} vs {bench}")
-        else:
-            subs.append("No index" + (" (outside the published range)" if v.code != "none" else ""))
-    else:
-        share = a.share_of_benchmark(mid)
-        if share is not None:
-            noun = "households" if mid == "hh" else "population" if mid == "pop" else m.name.lower()
-            subs.append(f"{share * 100:.1f} % of {bench}&#39;s {_e(noun)}")
-    subs.append(_e(TIER_LABELS[v.tier]))
+def _kpi(card: kpis.KpiCard) -> str:
+    subs = [x for x in (card.moe, card.index_text or card.share_text) if x] + [card.tier_label]
+    mark = f" {card.marker}" if card.marker else ""
+    tip = f' title="{_a(card.tooltip)}"' if card.tooltip else ""
     return (
-        f'<div class="kpi"><div class="label">{_e(m.name)}</div>'
-        f'<div class="value">{_e(fmt_value(m, v))}{mark}</div>'
-        f'<div class="sub">{" &middot; ".join(subs)}</div></div>'
+        f'<div class="kpi"{tip}><div class="label">{_e(card.label)}</div>'
+        f'<div class="value">{_e(card.value)}{mark}</div>'
+        f'<div class="sub">{" &middot; ".join(_e(s) for s in subs)}</div></div>'
     )
 
 
@@ -360,7 +319,7 @@ def render(
     parts.append(f'<p class="note">{_e(NOTE_ZIP)}</p></header>')
 
     parts.append('<section id="kpis"><h2>Key figures</h2><div class="kpis">')
-    parts += [_kpi(a, mid) for mid in a.lens.all_kpis]
+    parts += [_kpi(c) for c in kpis.cards(a)]
     parts.append("</div></section>")
 
     parts.append('<section id="charts"><h2>Trade area vs benchmark</h2><div class="charts">')

@@ -15,15 +15,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TextIO
 
-from zipographics import __version__, data, export, lenses, metrics, report, verticals
-from zipographics.analysis import Analysis, Mode, analyze
+from zipographics import __version__, data, export, kpis, lenses, report, verticals
+from zipographics.analysis import Mode, analyze
 from zipographics.data import DataNotBuiltError
 from zipographics.filters import apply as apply_filters
 from zipographics.importer import ColumnChoiceRequired, ImportFileError, import_csv
 from zipographics.models import ParsedInput, UsePolicy
 from zipographics.restricted import BANNER
 from zipographics.review import review_lines
-from zipographics.ui import DASH, fmt_moe, fmt_value
 from zipographics.zips import parse_paste
 
 EXIT_OK, EXIT_USAGE, EXIT_NO_DATA, EXIT_INPUT, EXIT_OUTPUT = 0, 2, 3, 4, 5
@@ -132,26 +131,6 @@ def _parse_input(zips: Sequence[str], file: Path | None, column: str | None) -> 
     return parsed
 
 
-def _kpi_lines(a: Analysis) -> list[str]:
-    lines = []
-    for mid in a.lens.all_kpis:
-        m = metrics.BY_ID[mid]
-        v = a.trade.values[mid]
-        parts = [f"{m.name:<28}", fmt_value(m, v).rjust(12)]
-        moe = fmt_moe(m, v)
-        parts.append(moe.ljust(14))
-        if m.indexable:
-            idx = a.index.get(mid)
-            text = DASH if idx is None or idx.value is None else str(idx.value)
-            parts.append(f"Index {text} vs {a.benchmark.name}")
-        else:
-            share = a.share_of_benchmark(mid)
-            if share is not None:
-                parts.append(f"{share * 100:.1f} % of {a.benchmark.name}")
-        lines.append("  " + " ".join(parts).rstrip())
-    return lines
-
-
 def _write(path: Path, content: bytes, err: TextIO) -> bool:
     try:
         path.write_bytes(content)
@@ -201,7 +180,7 @@ def _profile(args: argparse.Namespace, out: TextIO, err: TextIO, now: datetime) 
     print(f"Data: {a.vintage_label}", file=out)
     print(f"Lens: {a.lens.name}", file=out)
     print("Trade area (ZIP = Census ZCTA):", file=out)
-    for line in _kpi_lines(a):
+    for line in kpis.text_lines(a):
         print(line, file=out)
     if policy.restricted:
         print(export.ad_platform_notice(policy), file=out)

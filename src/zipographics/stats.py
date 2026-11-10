@@ -23,6 +23,7 @@ Bound = tuple[float, float]  # (lower, upper) of a bracket; lower may be -inf, u
 
 _TIER_ORDER: dict[Tier, int] = {"good": 0, "caution": 1, "unreliable": 2}
 _EPS = 1e-9  # float noise tolerance at the tier boundaries and bracket edges
+_NOISE = 1e-12  # relative size below which a negative radicand is rounding, not a sign
 
 
 def se(moe: float | None) -> float | None:
@@ -48,23 +49,34 @@ def moe_proportion(
     """MOE of a proportion X/Y where X is a subset of Y (handbook formula 6).
 
     ``sqrt(MOE(X)^2 - P^2 MOE(Y)^2) / Y``; if the radicand is negative the plus form (the ratio
-    formula) is used, as the handbook instructs. Result is in proportion units.
+    formula) is used, as the handbook instructs. A radicand within float noise of zero (equal
+    relative MOEs) counts as zero so rounding can't pick the branch. Result is in proportion
+    units; unknown if a result isn't finite.
     """
     if x is None or mx is None or y is None or my is None or y <= 0:
         return None
-    p = x / y
-    rad = mx**2 - p**2 * my**2
-    if rad < 0:
-        rad = mx**2 + p**2 * my**2  # "substitute a 'plus' for the 'minus'"
-    return math.sqrt(rad) / y
+    try:
+        p = x / y
+        plus = mx**2 + p**2 * my**2
+        rad = mx**2 - p**2 * my**2
+        if rad < -_NOISE * plus:
+            rad = plus  # "substitute a 'plus' for the 'minus'"
+        out = math.sqrt(max(rad, 0.0)) / y
+    except OverflowError:
+        return None
+    return out if math.isfinite(out) else None
 
 
 def moe_ratio(x: float | None, mx: float | None, y: float | None, my: float | None) -> float | None:
     """MOE of a ratio X/Y where X is not a subset of Y (handbook formula 7)."""
     if x is None or mx is None or y is None or my is None or y <= 0:
         return None
-    r = x / y
-    return math.sqrt(mx**2 + r**2 * my**2) / y
+    try:
+        r = x / y
+        out = math.sqrt(mx**2 + r**2 * my**2) / y
+    except OverflowError:
+        return None
+    return out if math.isfinite(out) else None
 
 
 def moe_product(
@@ -112,7 +124,8 @@ def index_value(value: float | None, benchmark: float | None) -> int | None:
     """``100 * value / benchmark`` rounded half up; unknown if either is null or benchmark is 0."""
     if value is None or benchmark is None or benchmark == 0:
         return None
-    return math.floor(100 * value / benchmark + 0.5)
+    scaled = 100 * value / benchmark + 0.5
+    return math.floor(scaled) if math.isfinite(scaled) else None
 
 
 # ------------------------------------------------------------------------------ medians

@@ -7,9 +7,14 @@ import pandas as pd
 Row = tuple[str, float | None, float | None]  # (state, population, households)
 
 
-def make_facts(rows: dict[str, Row]) -> pd.DataFrame:
-    """A facts frame indexed by 5-char string ZIP with state, population, households."""
-    return pd.DataFrame(
+def make_facts(
+    rows: dict[str, Row], counties: dict[str, tuple[str, str]] | None = None
+) -> pd.DataFrame:
+    """A facts frame indexed by 5-char string ZIP with state, population, households.
+
+    ``counties`` optionally maps ZIP -> (5-digit county FIPS, county name).
+    """
+    frame = pd.DataFrame(
         {
             "state": pd.Series([r[0] for r in rows.values()], index=list(rows), dtype="object"),
             "population": pd.Series(
@@ -25,3 +30,7 @@ def make_facts(rows: dict[str, Row]) -> pd.DataFrame:
         },
         index=pd.Index(list(rows), name="zip", dtype="object"),
     )
+    if counties is not None:
+        frame["county_fips"] = [counties[z][0] if z in counties else None for z in rows]
+        frame["county"] = [counties[z][1] if z in counties else None for z in rows]
+    return frame

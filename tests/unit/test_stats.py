@@ -359,3 +359,23 @@ def test_proportion_moe_is_unchanged_by_uniform_weighting(
     assert a is not None and b is not None
     assert b == pytest.approx(a, rel=1e-6, abs=1e-9)
     assert a >= 0 and math.isfinite(a)
+
+
+# ------------------------------------------------------------------------------ regressions
+def test_proportion_moe_radicand_within_float_noise_of_zero_is_zero_not_the_plus_branch() -> None:
+    # X = 1 ±1 of Y = 41.5 ±41.5: equal relative MOEs, so MOE(X)^2 - P^2 MOE(Y)^2 is exactly 0 in
+    # theory but ±1e-16 in floats; the sign must not pick the branch (found by a property test)
+    for w in (1.0, 3.0, 0.37, 100.0):
+        got = stats.moe_proportion(1 * w, 1 * w, 41.5 * w, 41.5 * w)
+        assert got == pytest.approx(0.0, abs=1e-6)
+
+
+def test_proportion_moe_with_an_absurdly_small_denominator_is_unknown_not_a_crash() -> None:
+    assert stats.moe_proportion(1.0, 0.0, 2.225073858507203e-309, 0.0) is None
+    assert stats.moe_ratio(1.0, 0.0, 2.225073858507203e-309, 0.0) is None
+
+
+def test_overflowing_intermediate_values_are_unknown() -> None:
+    assert stats.moe_proportion(1e200, 1.0, 1e-100, 1.0) is None  # p^2 overflows
+    assert stats.moe_ratio(1e200, 1.0, 1e-100, 1.0) is None
+    assert stats.index_value(1e300, 1e-300) is None

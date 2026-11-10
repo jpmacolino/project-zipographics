@@ -73,6 +73,18 @@ STATE_NAMES: dict[str, str] = {
     "WY": "Wyoming",
 }
 
+#: USPS abbreviation -> state FIPS code (the benchmark table's ``geo_id`` for states).
+STATE_FIPS: dict[str, str] = {
+    "AL": "01", "AK": "02", "AZ": "04", "AR": "05", "CA": "06", "CO": "08", "CT": "09",
+    "DE": "10", "DC": "11", "FL": "12", "GA": "13", "HI": "15", "ID": "16", "IL": "17",
+    "IN": "18", "IA": "19", "KS": "20", "KY": "21", "LA": "22", "ME": "23", "MD": "24",
+    "MA": "25", "MI": "26", "MN": "27", "MS": "28", "MO": "29", "MT": "30", "NE": "31",
+    "NV": "32", "NH": "33", "NJ": "34", "NM": "35", "NY": "36", "NC": "37", "ND": "38",
+    "OH": "39", "OK": "40", "OR": "41", "PA": "42", "RI": "44", "SC": "45", "SD": "46",
+    "TN": "47", "TX": "48", "UT": "49", "VT": "50", "VA": "51", "WA": "53", "WV": "54",
+    "WI": "55", "WY": "56", "PR": "72",
+}  # fmt: skip
+
 _ZIP = re.compile(r"[0-9]{5}")
 
 
@@ -96,14 +108,17 @@ class StateEntry(NamedTuple):
     population: float
 
 
-def state_entries(zips: Sequence[str], facts: pd.DataFrame) -> list[StateEntry]:
-    """(zip, state, population) for each ZIP that has a state in ``facts``, in input order.
+def state_entries(
+    zips: Sequence[str], facts: pd.DataFrame, column: str = "state"
+) -> list[StateEntry]:
+    """(zip, group, population) for each ZIP that has a value in ``column``, in input order.
 
-    Unknown population counts as 0.
+    ``column`` is ``state`` by default; ``county_fips`` gives the county grouping for the default
+    county benchmark (the group is stored in the ``state`` field). Unknown population counts as 0.
     """
     sub = facts.reindex(list(zips))
     out: list[StateEntry] = []
-    for z, state, pop in zip(sub.index, sub["state"], sub["population"], strict=True):
+    for z, state, pop in zip(sub.index, sub[column], sub["population"], strict=True):
         if isinstance(state, str) and state:
             out.append(StateEntry(z, state, 0.0 if pd.isna(pop) else float(pop)))
     return out

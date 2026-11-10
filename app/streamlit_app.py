@@ -655,8 +655,8 @@ def step_insights(form: dict, art: data.Artifacts) -> None:  # type: ignore[type
                 )
 
     ids, zips = _table_section(a, result)
+    _map_section(a, art, result)  # before the charts: the map is slower to draw (DECISIONS P17)
     _charts_section(a)
-    _map_section(a, art, result)
     if rules_ok:
         _exports_section(a, art, result, ids, zips)
     else:  # exporting every ZIP while a broken filter is on screen would mislead

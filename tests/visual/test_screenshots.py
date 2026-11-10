@@ -196,3 +196,43 @@ def test_the_report_renders_and_prints_to_pdf(browser) -> None:  # type: ignore[
     (SHOTS / "STAMP.txt").write_text(
         f"captured {datetime.now(UTC):%Y-%m-%d %H:%M} UTC\n", encoding="utf-8"
     )
+
+
+@pytest.mark.parametrize("n", [100, 1000])
+def test_the_map_renders_in_the_browser_within_budget(page, capsys, n) -> None:  # type: ignore[no-untyped-def]
+    """SPEC 7: visible map render <= 3 s. Two measurements: the map itself (its frame appears ->
+    polygons drawn, spec bound) and end to end (click on Show insights -> first polygon). The
+    end-to-end time is 3-4 s even for 100 ZIPs (the Streamlit rerun, building the map, and the map
+    component loading Leaflet, jQuery and Bootstrap from CDNs one after another), so it is pinned at
+    5 s and reported to the owner as a deviation from a strict reading of 3 s (DECISIONS P17)."""
+    import pandas as pd
+
+    cols = ["zip", "B01003_001_e"]
+    prof = pd.read_parquet(ROOT / "data" / "zcta_profile.parquet", columns=cols)
+    zips = list(prof.loc[prof["B01003_001_e"] > 0, "zip"].sample(n, random_state=11))
+    choose_industry(page, HOME, "No")
+    click(page, "Continue")
+    page.get_by_role("textbox", name="ZIP codes").fill(" ".join(zips))
+    page.keyboard.press("Control+Enter")
+    page.wait_for_timeout(800)
+    click(page, "Review ZIPs")
+    page.get_by_role("button", name="Show insights").first.click()
+    started = time.perf_counter()
+    page.locator("iframe").first.wait_for(state="attached", timeout=60_000)
+    frame_at = time.perf_counter() - started
+    polygons = page.frame_locator("iframe").locator(
+        "path.leaflet-interactive"
+    )  # the map is an iframe
+    polygons.first.wait_for(state="attached", timeout=60_000)
+    total = time.perf_counter() - started
+    drawn = polygons.count()
+    page.wait_for_timeout(1500)
+    shot(page, f"g_{n}_zips_insights")
+    with capsys.disabled():
+        print(
+            f"  {n}-ZIP map: frame at {frame_at:.1f} s, polygons {total - frame_at:.1f} s later "
+            f"(map render), {total:.1f} s end to end ({drawn} drawn)"
+        )
+    assert drawn >= 0.9 * n
+    assert total - frame_at <= 3.0  # the spec's visible-render budget, for the map itself
+    assert total <= 5.0  # end to end (see the docstring)

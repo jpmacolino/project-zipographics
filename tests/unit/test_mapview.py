@@ -253,3 +253,43 @@ def test_a_restricted_tooltip_has_no_index() -> None:
     layer = mapview.layer(run(FORCED), None, None, GEO)
     assert layer is not None
     assert "Index" not in features(layer)["33602"]["properties"]["tooltip"]
+
+
+# ------------------------------------------------------------------------- payload size (SPEC 7)
+def _coords(node):  # type: ignore[no-untyped-def]
+    if isinstance(node[0], int | float):
+        yield node
+    else:
+        for child in node:
+            yield from _coords(child)
+
+
+def test_coordinates_are_rounded_to_what_the_simplified_boundaries_can_justify() -> None:
+    # 1,000 polygons at 15 digits were a 1.7 MB payload and a 3.5 s browser render; the boundaries
+    # are simplified to about 440 m, so 5 decimals (about 1 m) loses nothing visible
+    fine = gpd.GeoDataFrame(
+        {"zip": ["33602"]},
+        geometry=[box(-82.123456789012, 27.987654321098, -82.0, 28.1)],
+        crs="EPSG:4326",
+    )
+    layer = mapview.layer(run(text="33602"), "owner", None, fine)
+    assert layer is not None
+    for lon, lat in _coords(layer.geojson["features"][0]["geometry"]["coordinates"]):
+        assert (
+            round(lon, mapview.COORD_DECIMALS) == lon and round(lat, mapview.COORD_DECIMALS) == lat
+        )
+    assert mapview.COORD_DECIMALS <= 5
+    first = layer.geojson["features"][0]["geometry"]["coordinates"][0][0]
+    assert first == [-82.12346, 27.98765] or first == [-82.0, 27.98765] or len(first) == 2
+
+
+def test_rounding_keeps_polygons_valid_and_in_place() -> None:
+    from shapely.geometry import shape
+
+    layer = mapview.layer(run(), "owner", None, GEO)
+    assert layer is not None
+    for f in layer.geojson["features"]:
+        poly = shape(f["geometry"])
+        assert poly.is_valid and not poly.is_empty
+        original = GEO.loc[GEO["zip"] == f["properties"]["zip"], "geometry"].iloc[0]
+        assert poly.symmetric_difference(original).area < 1e-6

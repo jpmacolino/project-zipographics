@@ -18,6 +18,7 @@ from typing import Any, Literal
 
 import geopandas as gpd
 import numpy as np
+import shapely
 from shapely.geometry import mapping
 
 from zipographics import metrics
@@ -31,6 +32,9 @@ NEUTRAL = "#9aa7b4"  # mid grey: still visible on a street map (and on the repor
 _PALETTE = ("#c6dbef", "#9ecae1", "#6baed6", "#3182bd", "#08519c")
 _OUTLINE, _OUTLINE_MATCH, _OUTLINE_UNRELIABLE = "#ffffff", "#111111", "#444444"
 _OUTLINE_NEUTRAL = "#2f3e4e"  # restricted mode: one fill, one clearly visible outline
+#: Coordinates are rounded to 5 decimals (about 1 m). The boundaries are simplified to about 440 m
+#: already, and 15-digit coordinates made a 1,000-ZIP payload of 1.7 MB and a 3.5 s browser render.
+COORD_DECIMALS = 5
 _FILL_OPACITY = 0.82
 _DASH = "4 3"
 
@@ -103,6 +107,20 @@ def classify(a: Analysis, zips: Sequence[str], metric_id: str, bins: int = 5) ->
     else:
         labels = (fmt_number(metric, edges[0]),)
     return Classification(tuple(float(e) for e in edges), tuple(out), _shades(k), labels)
+
+
+def _rounded(node: Any) -> Any:
+    if isinstance(node[0], int | float):
+        return [round(float(x), COORD_DECIMALS) for x in node]
+    return [_rounded(child) for child in node]
+
+
+def _geometry(geom: Any) -> dict[str, Any]:
+    """GeoJSON geometry snapped to the coordinate grid (kept valid) with short numbers."""
+    snapped = shapely.set_precision(geom, 10.0**-COORD_DECIMALS)
+    out = dict(mapping(snapped))
+    out["coordinates"] = _rounded(out["coordinates"])
+    return out
 
 
 def _tooltip(a: Analysis, z: str, metric_ids: Sequence[str], shaded: str | None = None) -> str:
@@ -178,7 +196,7 @@ def layer(
             "dashArray": dash, "fillOpacity": _FILL_OPACITY,
         }  # fmt: skip
         props["tooltip"] = _tooltip(a, z, shown, None if locked else metric)
-        features.append({"type": "Feature", "geometry": mapping(geom), "properties": props})
+        features.append({"type": "Feature", "geometry": _geometry(geom), "properties": props})
     minx, miny, maxx, maxy = (float(x) for x in sub.total_bounds)
     legend = tuple(LegendItem(lb, cls.shades[j]) for j, lb in enumerate(cls.labels)) if cls else ()
     note = None

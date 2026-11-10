@@ -47,8 +47,27 @@ fixed, golden-scenario verification, SPEC §10 checklist)._
 
 ## Golden scenarios: independent verification
 
-_For each SPEC §9.4 scenario: the input, where each expected value came from (data.census.gov
-table and geography, or a hand calculation shown step by step), and the result._
+**How the expected values were made.** `tests/integration/oracle.py` re-reads the **raw Census API responses
+cached in `data/raw`** (the published numbers: the same ACS 2020-2024 5-year tables that data.census.gov serves)
+and the Census 2020 ZCTA-to-county relationship file with its own small parsers, and imports nothing from
+`zipographics`; each scenario in `tests/integration/test_golden.py` then does the arithmetic by hand-written
+formulas (sums, the handbook's proportion MOE, linear interpolation of the median, round-half-up index) and compares
+the app. Nothing is a snapshot of the app's output. **Limit, stated plainly:** I could not click through
+data.census.gov (an interactive site) from this environment; the API responses are the same published figures, but
+a human spot-check of two or three numbers on data.census.gov (for example ZCTA 02108 B01003 = 3,794, B11001 = 1,973)
+would add an independent look at the *source*. All eight scenarios pass (`uv run pytest -m data
+tests/integration/test_golden.py -s` prints the tables below).
+
+| # | scenario | input | independently computed expectation | result |
+|---|---|---|---|---|
+| 1 | Tampa Zipcator export, 5 mi | `tampa_5mi.csv`, `tampa_5mi_excel.csv`, `tampa_5mi_semicolon.csv` (12 ZIPs, overlaps 37.9-100 %) | ZIP count 12 (all are ZCTAs); in-radius households = sum(B11001_001 x overlap) = **103,916.2**, MOE = sqrt(sum (overlap x MOE)^2); median household income interpolated from the overlap-weighted sum of B19001_002..017 = **$77,109**; owner share sum(B25003_002 x w) / sum(B25003_001 x w) = **0.5005** vs Florida (state 12) 0.6762 -> index = round-half-up(100 x 0.5005 / 0.6762) = **74**; Florida published median income | all three files identical and equal to the oracle (relative error < 1e-9) |
+| 2 | Boston, leading zeros | 02108-02111, 02113-02116 as a correct paste, an Excel-mangled paste (`2108, 2109, ...`) and an Excel-re-saved CSV (zeros stripped, cp1252) | population = sum of B01003_001 = **90,641**; Massachusetts (state 25) owner share **0.6252**; repaired count 0 / 8 / 8 | identical trade-area values from all three inputs; repaired 0 / 8 / 8; benchmark Massachusetts |
+| 3 | Rural small populations (MT/NE) | 7 ZCTAs chosen from the raw data with population 150-900: the four with the largest and three with the smallest owner-share CV | CV = MOE / 1.645 / estimate; share MOE = sqrt(MOE_x^2 - p^2 MOE_y^2) / y (plus form if negative); tiers 15 % / 30 % | all seven tiers and MOEs match (CV(owner) 46.5, 47.6, 89.6, 99.3 = unreliable; 1.3, 1.4, 1.6 = good); unreliable cells show a dagger and grey italics, caution a tilde; all 7 listed as small populations |
+| 4 | Puerto Rico | `601, 603, 610, 612` | repaired to 00601/00603/00610/00612; benchmark = Puerto Rico (state 72), owner share **0.6791**; the national-benchmark note present | match. **DP03 for PR (V5):** the Data Profile items exist for these ZCTAs (uninsured 0.051, 0.047, 0.057, 0.056) |
+| 5 | Restricted vertical | Tampa set, "Mortgage & lending" | question locked Yes; every filter rule (value and index, 3 metrics), every metric ordering, preset, lens switch refused in the library; ZIP list equals the 12 input ZIPs; CSV without Qualifies/index columns; footer "Restricted mode: on", "Answer: Yes (set by industry)"; in the real-data UI: locked radio, banner, no filter builder or sort control, ZIP list = input | pass |
+| 6 | Restricted by answer | Tampa set, "Automotive sales" answered Yes | restricted on; attestation says `Answer: Yes` (not "set by industry") | pass |
+| 7 | Multi-state (Kansas City) | 66101, 66102, 66103, 64105, 64106, 64108, 64109 | population by state from B01003: **Kansas 54,729 vs Missouri 38,193**, so default benchmark Kansas; primary county (relationship file, largest land overlap) with most population: **Wyandotte County (20209)**; message "Your ZIPs are in KS and MO. Benchmark: Kansas ..." | pass |
+| 8 | Messy paste | `33602, 2108 ,33606-1234;<tab>02109<newline>33602 abc 12-34 1e5 33601 99999` | hand count: 6 distinct valid; recognized 4; not found 2 (33601 and 99999 are not ZCTAs, checked in the raw data); repaired 1 (2108); ZIP+4 truncated 1; invalid 3 (abc, 12-34, 1e5); duplicates 1; small populations 0 | review summary and lines match every count |
 
 ## Phase reviews
 

@@ -748,3 +748,26 @@ now also runs `uv sync` + `mypy` + the whole test suite on Python 3.11 in its ow
 gitignored; `--skip-py311` for a quick loop, not for a phase-end run). **Hypothesis profiles** in
 `tests/conftest.py`: `default` 25 examples locally, `ci` 150 (selected automatically when `CI` is set),
 `thorough` 600 (`HYPOTHESIS_PROFILE=thorough`); property tests no longer set their own `max_examples`.
+
+### Phase 7 (2026-11-10): golden scenarios, benchmarks, README
+
+**P17. Map ordering, payload, and the browser render budget.** The map section is now drawn *before* the charts
+(Streamlit streams elements in script order, so the map frame appears about 0.8 s earlier; SPEC §5.5's section
+order is not normative). Map coordinates are rounded to 5 decimals (`mapview.COORD_DECIMALS`, about 1 m: the
+boundaries are simplified to about 440 m) with the geometry snapped to that grid (`shapely.set_precision`) and
+kept valid; it barely changes the 1,000-ZIP payload (1.7 to 1.6 MB, because tooltips are the larger part) but is
+free. Leaflet's canvas renderer was tried and gave no gain (reverted). **Measured with Playwright on the real data
+(development laptop):** the map itself (its frame appears -> polygons drawn) takes **0.6-1.6 s** (budget 3 s,
+met); **end to end** (click on Show insights -> first polygon) is **2.9 s at 100 ZIPs and 3.7 s at 1,000 ZIPs**,
+slightly over a strict reading of "visible render <= 3 s" at the extreme: the Streamlit rerun, building the
+folium map (about 1 s at 1,000 ZIPs), and the map component loading Leaflet, jQuery and Bootstrap from CDNs one
+after another (about 0.6 s). The visual suite pins the map's own render at 3 s and end to end at 5 s; **reported to
+the owner as a deviation** (a lighter map component, or self-hosting the libraries, would fix it).
+Server-side budgets (`pytest -m slow -s`, real data, 1,000 ZIPs): data load 0.35 s (3 s), parse + review 0.08 s
+(0.5 s), analysis (profile, indexes, per-ZIP table) 0.37 s (1 s), map layer 0.46-0.55 s (1 s), report 0.86 s
+(5 s), CSV 0.15 s.
+
+**P18. README is tested.** The footer-reading snippet is executed against a real CSV export in both variants
+(`tests/unit/test_readme.py`; the test caught that blank ZIP cells on the summary rows came back as NaN, so the
+snippet uses `keep_default_na=False`); linked files, image sizes, documented flags and the SPEC §10.9 contents are
+checked.

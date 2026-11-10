@@ -7,7 +7,9 @@ B19001 income brackets (so a multi-ZIP median can be interpolated).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -120,3 +122,14 @@ def default_benchmarks(zips: dict[str, Z]) -> dict[tuple[str, str], tuple[str, Z
         fips, name = z.county
         out.setdefault(("county", fips), (name, Z(1.5e6, 600e3, 0.63, 0.28, 68_000)))
     return out
+
+
+def write_data_dir(art: data.Artifacts, folder: Path, geo: object | None = None) -> Path:
+    """Write ``art`` as the files ``data.load`` reads (a tiny stand-in for ``data/``)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    art.profile.reset_index().to_parquet(folder / "zcta_profile.parquet")
+    art.benchmarks.to_parquet(folder / "benchmarks.parquet")
+    (folder / "metadata.json").write_text(json.dumps(art.metadata), encoding="utf-8")
+    if geo is not None:
+        geo.to_parquet(folder / "zcta_geo.parquet")  # type: ignore[attr-defined]
+    return folder

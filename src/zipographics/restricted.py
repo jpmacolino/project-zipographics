@@ -15,6 +15,7 @@ from zipographics.verticals import BY_NAME
 __all__ = [
     "AD_PLATFORM_NOTICE",
     "BANNER",
+    "BANNER_BODY",
     "BANNER_TITLE",
     "NOT_LEGAL_ADVICE",
     "TAGS",
@@ -26,7 +27,7 @@ __all__ = [
 ]
 
 BANNER_TITLE = "Restricted mode is on."
-_BANNER_BODY = (
+BANNER_BODY = (
     "You said this will be used to market housing, jobs, credit or financing, or insurance. "
     "Fair-housing, fair-lending and equal-employment rules, and Google and Meta ad policies, "
     "don't allow choosing who sees that kind of marketing based on characteristics like age, "
@@ -34,7 +35,7 @@ _BANNER_BODY = (
     "as context, but ZIPs can't be ranked, filtered or selected by it, and the ZIP list stays the "
     "one you entered."
 )
-BANNER = f"{BANNER_TITLE} {_BANNER_BODY}"
+BANNER = f"{BANNER_TITLE} {BANNER_BODY}"
 
 AD_PLATFORM_NOTICE = (
     "Google Ads and Meta don't allow ZIP-code targeting for housing, employment, "

@@ -61,6 +61,12 @@ class Analysis:
 
     # ------------------------------------------------------------------ labels
     @property
+    def restricted(self) -> bool:
+        """Restricted mode, read the strict way: the policy says so, or it names a restricted
+        industry (so a policy built by mistake as unrestricted cannot unlock anything)."""
+        return is_restricted(self.policy)
+
+    @property
     def weighted(self) -> bool:
         return self.mode == "in_radius"
 

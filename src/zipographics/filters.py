@@ -17,10 +17,10 @@ from dataclasses import dataclass
 
 from zipographics import metrics
 from zipographics.analysis import Analysis
-from zipographics.models import Rule, UsePolicy
+from zipographics.models import Rule
 from zipographics.restricted import require_unrestricted
 from zipographics.stats import coded_bound
-from zipographics.ui import GEQ, LEQ, fmt_threshold
+from zipographics.ui import GEQ, LEQ, displayed_value, fmt_threshold
 
 MAX_RULES = 6
 
@@ -86,7 +86,9 @@ def validate(rules: Sequence[Rule]) -> None:
 
 
 def _test(op: str, x: float, threshold: float) -> bool:
-    return x >= threshold if op == ">=" else x <= threshold
+    """``x op threshold`` with slack for float noise (7.0 % shown is not 0.07 plus 1e-17)."""
+    slack = 1e-9 * max(1.0, abs(threshold))
+    return x >= threshold - slack if op == ">=" else x <= threshold + slack
 
 
 def _judge(a: Analysis, rule: Rule, i: int, zip_code: str) -> tuple[bool, bool, bool]:
@@ -101,9 +103,10 @@ def _judge(a: Analysis, rule: Rule, i: int, zip_code: str) -> tuple[bool, bool, 
             return False, False, False
         return _test(rule.op, idx.value, rule.value), idx.tier == "unreliable", False
     unreliable = value.tier == "unreliable"
+    metric = metrics.BY_ID[rule.metric]
     if value.code == "none":
-        return _test(rule.op, est, rule.value), unreliable, False
-    bound = coded_bound(est, value.code)
+        return _test(rule.op, displayed_value(metric, est), rule.value), unreliable, False
+    bound = displayed_value(metric, coded_bound(est, value.code))
     if value.code == "top":  # the true value is at least `bound`
         if rule.op == ">=":
             ok = bound >= rule.value
@@ -118,17 +121,17 @@ def _judge(a: Analysis, rule: Rule, i: int, zip_code: str) -> tuple[bool, bool, 
 def apply(
     a: Analysis,
     rules: Sequence[Rule],
-    policy: UsePolicy | None,
     *,
     exclude_unreliable: bool = False,
 ) -> FilterResult:
     """Evaluate ``rules`` (AND) over the recognized ZIPs of ``a``.
 
-    Raises :class:`~zipographics.errors.RestrictedUseError` when ``policy`` is restricted (or
-    missing) and ``rules`` is not empty. An empty list means no filtering: every ZIP qualifies.
+    The policy is the Analysis's own (there is no second one to pass). Raises
+    :class:`~zipographics.errors.RestrictedUseError` when it is restricted and ``rules`` is not
+    empty. An empty list means no filtering: every ZIP qualifies.
     """
     if rules:
-        require_unrestricted(policy, "filter", a.policy)
+        require_unrestricted(a.policy, "filter")
         validate(rules)
     hh = a.table.columns["hh"].est if "hh" in a.table.columns else None
     matches: dict[str, ZipMatch] = {}

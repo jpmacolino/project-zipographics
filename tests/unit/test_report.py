@@ -38,7 +38,7 @@ GEO = gpd.GeoDataFrame(
 
 def render(policy: UsePolicy = OFF, rules=None, geo=GEO, name: str = "Acme HVAC", **kw) -> str:  # type: ignore[no-untyped-def]
     a = an.analyze(ART, parse_paste("33602 99999 33606 33603"), policy, project_name=name, **kw)
-    result = filters.apply(a, rules or [], policy)
+    result = filters.apply(a, rules or [])
     return report.render(a, result, geo=geo, now=NOW, version="1.2.3")
 
 
@@ -168,7 +168,7 @@ def test_without_filters_the_filter_section_is_absent() -> None:
 @pytest.mark.parametrize("policy", [ANSWERED, FORCED])
 def test_restricted_report_has_the_banner_and_no_filter_state(policy: UsePolicy) -> None:
     a = an.analyze(ART, parse_paste("33602 33606 33603"), policy, project_name="Acme")
-    html = report.render(a, filters.apply(a, [], policy), geo=GEO, now=NOW, version="1.2.3")
+    html = report.render(a, filters.apply(a, []), geo=GEO, now=NOW, version="1.2.3")
     assert restricted.BANNER_TITLE in html and "can't be ranked, filtered or selected" in html
     assert 'id="filters"' not in html and 'class="match"' not in html
     assert "Qualifies" not in html and "\N{CHECK MARK}" not in html
@@ -178,7 +178,7 @@ def test_restricted_report_has_the_banner_and_no_filter_state(policy: UsePolicy)
 
 def test_restricted_report_cannot_be_given_filters() -> None:
     a = an.analyze(ART, parse_paste("33602 33606"), OFF, project_name="x")
-    result = filters.apply(a, [Rule("owner", ">=", 0.5)], OFF)
+    result = filters.apply(a, [Rule("owner", ">=", 0.5)])
     restricted_a = an.analyze(ART, parse_paste("33602 33606"), ANSWERED, project_name="x")
     with pytest.raises(restricted.RestrictedUseError):
         report.render(restricted_a, result, geo=GEO, now=NOW, version="1.2.3")
@@ -219,7 +219,7 @@ def test_in_radius_columns_appear_for_zipcator_input() -> None:
         zips=("33602", "33606"), overlaps={"33602": 50.0, "33606": 100.0}, source="zipcator"
     )
     a = an.analyze(ART, parsed, OFF, project_name="Z")
-    html = report.render(a, filters.apply(a, [], OFF), geo=GEO, now=NOW, version="1.2.3")
+    html = report.render(a, filters.apply(a, []), geo=GEO, now=NOW, version="1.2.3")
     assert "In-radius estimate" in html and "In-radius households" in html and ">1,000<" in html
 
 
@@ -233,5 +233,5 @@ def test_a_large_input_renders_every_row_quickly() -> None:
     }
     art = make_artifacts(world)
     a = an.analyze(art, ParsedInput(zips=tuple(world)), OFF, project_name="Big")
-    html = report.render(a, filters.apply(a, [], OFF), geo=None, now=NOW, version="1")
+    html = report.render(a, filters.apply(a, []), geo=None, now=NOW, version="1")
     assert html.count("<tr") >= 400

@@ -79,7 +79,6 @@ def ad_platform_notice(policy: UsePolicy | None) -> str | None:
 
 def zip_list(
     a: Analysis,
-    policy: UsePolicy | None,
     *,
     qualifying: Sequence[str] | None = None,
     include_not_found: bool = True,
@@ -87,14 +86,15 @@ def zip_list(
 ) -> str:
     """ZIPs for an ad platform, with no header or footer (it must paste and upload cleanly).
 
-    Restricted mode (or no policy) returns exactly the user's valid input ZIPs in input order and
-    ignores ``qualifying`` and ``include_not_found``. Otherwise: the qualifying ZIPs when a subset
-    is given, else every input ZIP (not-found ones too unless ``include_not_found`` is false).
+    Restricted mode (the Analysis's own policy) returns exactly the valid input ZIPs in input order
+    and ignores ``qualifying`` and ``include_not_found``. Otherwise: the qualifying ZIPs when a
+    subset is given, else every input ZIP (not-found ones too unless ``include_not_found`` is
+    false).
     """
     if style not in ("comma", "newline"):
         raise ValueError(f"Unknown ZIP list style {style!r}: use comma or newline.")
     entered = a.parsed.zips
-    if is_restricted(policy, a.policy):
+    if a.restricted:
         chosen: Sequence[str] = entered
     elif qualifying is not None:
         unknown = [z for z in qualifying if z not in a.zips]
@@ -127,7 +127,7 @@ def attestation(
     a: Analysis, result: FilterResult | None, *, now: datetime, version: str
 ) -> list[str]:
     """The footer / attestation lines (SPEC §5.6 item 4), identical in every export."""
-    restricted_on = is_restricted(a.policy)
+    restricted_on = a.restricted
     if result is not None and result.active and not restricted_on:
         filters = "; ".join(describe(r) for r in result.rules)
     else:
@@ -214,7 +214,6 @@ def _cells(
 
 def csv_text(
     a: Analysis,
-    policy: UsePolicy | None,
     result: FilterResult | None = None,
     *,
     excel: bool = False,
@@ -226,12 +225,13 @@ def csv_text(
     """The profile as CSV text: one row per recognized ZIP, a Trade area row, a Benchmark row, a
     blank line, then the footer (one ``Note:`` cell per line).
 
-    Restricted mode (or no policy): input order always, no index columns, no Qualifies column;
+    Restricted mode (the Analysis's own policy): input order always, no index columns, no
+    Qualifies column;
     passing a filter result that has rules raises :class:`RestrictedUseError`.
     """
-    locked = is_restricted(policy, a.policy)
+    locked = a.restricted
     if locked and result is not None and result.active:
-        require_unrestricted(policy, "select", a.policy)
+        require_unrestricted(a.policy, "select")
     ids = list(metric_ids) if metric_ids is not None else list(default_metrics(a))
     zips = list(a.zips)
     if order is not None and not locked:
@@ -324,7 +324,6 @@ def csv_text(
 
 def csv_bytes(
     a: Analysis,
-    policy: UsePolicy | None,
     result: FilterResult | None = None,
     *,
     excel: bool = False,
@@ -335,6 +334,6 @@ def csv_bytes(
 ) -> bytes:
     """UTF-8 bytes for download: with a BOM and ``="02108"`` ZIP cells when ``excel``."""
     text = csv_text(
-        a, policy, result, excel=excel, metric_ids=metric_ids, order=order, now=now, version=version
+        a, result, excel=excel, metric_ids=metric_ids, order=order, now=now, version=version
     )
     return (BOM + text).encode("utf-8") if excel else text.encode("utf-8")

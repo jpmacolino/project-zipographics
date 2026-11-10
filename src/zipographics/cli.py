@@ -206,11 +206,9 @@ def _profile(args: argparse.Namespace, out: TextIO, err: TextIO, now: datetime) 
     if policy.restricted:
         print(export.ad_platform_notice(policy), file=out)
 
-    result = apply_filters(a, [], policy)
+    result = apply_filters(a, [])
     if args.csv is not None:
-        content = export.csv_bytes(
-            a, policy, result, excel=args.excel, now=now, version=__version__
-        )
+        content = export.csv_bytes(a, result, excel=args.excel, now=now, version=__version__)
         if not _write(args.csv, content, err):
             return EXIT_OUTPUT
         print(f"Wrote {args.csv}", file=out)

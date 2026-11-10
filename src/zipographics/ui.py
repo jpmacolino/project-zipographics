@@ -46,22 +46,45 @@ TIER_LABELS: dict[Tier, str] = {
 TIER_MARK: dict[Tier, str] = {"good": "", "caution": "", "unreliable": DAGGER}
 
 
+#: How each unit is displayed: (scale, decimals). A share shows 100x with one decimal ("46.8 %").
+_PRECISION: dict[str, tuple[int, int]] = {
+    "percent": (100, 1),
+    "dollars": (1, 0),
+    "count": (1, 0),
+    "year": (1, 0),
+    "years": (1, 1),
+    "ratio": (1, 2),
+}
+
+
+def scale_of(metric: Metric) -> int:
+    """The factor a value is multiplied by before display (100 for a share)."""
+    return _PRECISION[metric.unit][0]
+
+
+def displayed_value(metric: Metric, value: float) -> float:
+    """``value`` rounded to the precision :func:`fmt_number` shows, in the metric's own units.
+
+    Filters compare this, so a value displayed as meeting a threshold always qualifies (DECISIONS
+    P10): a share of 0.2496 is shown as "25.0 %" and counts as 0.25; $74,999.6 as $75,000.
+    """
+    scale, digits = _PRECISION[metric.unit]
+    return float(f"{value * scale:.{digits}f}") / scale
+
+
 def fmt_number(metric: Metric, value: float | None) -> str:
     """A plain value in the metric's unit; an em dash for unknown."""
     if value is None or not math.isfinite(value):
         return DASH
-    unit = metric.unit
-    if unit == "percent":
-        return f"{value * 100:.1f} %"
-    if unit == "dollars":
-        return f"${value:,.0f}"
-    if unit == "count":
-        return f"{value:,.0f}"
-    if unit == "year":
-        return f"{value:.0f}"
-    if unit == "years":
-        return f"{value:.1f}"
-    return f"{value:.2f}"
+    scale, digits = _PRECISION[metric.unit]
+    text = f"{value * scale:,.{digits}f}"
+    if metric.unit == "percent":
+        return f"{text} %"
+    if metric.unit == "dollars":
+        return f"${text}"
+    if metric.unit in ("year", "years", "ratio"):
+        return text.replace(",", "")
+    return text
 
 
 def fmt_value(metric: Metric, value: MetricValue) -> str:

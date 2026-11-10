@@ -10,7 +10,6 @@ import math
 
 from zipographics import metrics
 from zipographics.analysis import Analysis
-from zipographics.models import UsePolicy
 from zipographics.restricted import require_unrestricted
 
 INPUT = "input"
@@ -20,7 +19,6 @@ ZIP = "zip"
 def order(
     a: Analysis,
     key: str,
-    policy: UsePolicy | None,
     *,
     descending: bool = False,
     index: bool = False,
@@ -28,13 +26,15 @@ def order(
     """The recognized ZIPs of ``a`` ordered by ``key``: ``"input"``, ``"zip"`` or a metric id.
 
     ``index=True`` orders by the ZIP's index against the benchmark instead of its value. Unknown
-    values sort last in both directions; ties keep input order.
+    values sort last in both directions; ties keep input order. Ordering by anything but input or
+    ZIP order is ranking by a demographic characteristic: it raises
+    :class:`~zipographics.errors.RestrictedUseError` when the Analysis's own policy is restricted.
     """
     if key == INPUT:
         return a.zips[::-1] if descending else a.zips
     if key == ZIP:
         return tuple(sorted(a.zips, reverse=descending))
-    require_unrestricted(policy, "rank", a.policy)
+    require_unrestricted(a.policy, "rank")
     if key not in metrics.BY_ID:
         raise ValueError(f"Unknown order key: {key!r}")
     if index:

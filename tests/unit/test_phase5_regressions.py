@@ -12,8 +12,7 @@ from shapely.geometry import box
 from synth_art import Z, make_artifacts
 
 from zipographics import analysis as an
-from zipographics import cli, export, filters, lenses, report, restricted, table, verticals
-from zipographics.errors import RestrictedUseError
+from zipographics import cli, export, filters, report, restricted, verticals
 from zipographics.models import ParsedInput, Rule, UsePolicy
 from zipographics.zips import parse_paste
 
@@ -43,50 +42,6 @@ def run(policy: UsePolicy = OFF, text: str = "33602 33606 33603", **kw):  # type
 
 
 # ------------------------------------------------------------ 3: the Analysis's own policy counts
-def test_a_policy_that_disagrees_with_a_restricted_analysis_cannot_unlock_filters() -> None:
-    a = run(FORCED)
-    with pytest.raises(RestrictedUseError):
-        filters.apply(a, [Rule("owner", ">=", 0.6)], OFF)
-
-
-def test_a_policy_that_disagrees_with_a_restricted_analysis_cannot_unlock_ordering() -> None:
-    a = run(ANSWERED)
-    with pytest.raises(RestrictedUseError):
-        table.order(a, "owner", OFF)
-    assert table.order(a, "input", OFF) == a.zips
-
-
-def test_a_policy_that_disagrees_with_a_restricted_analysis_cannot_unlock_the_zip_list() -> None:
-    a = run(FORCED)
-    assert export.zip_list(a, OFF, qualifying=("33606",)) == "33602, 33606, 33603"
-
-
-def test_a_policy_that_disagrees_with_a_restricted_analysis_cannot_unlock_the_csv() -> None:
-    a = run(FORCED)
-    unrestricted = run(OFF)
-    result = filters.apply(unrestricted, [Rule("owner", ">=", 0.6)], OFF)
-    with pytest.raises(RestrictedUseError):
-        export.csv_text(a, OFF, result, now=NOW, version="1")
-    text = export.csv_text(a, OFF, None, order=("33603", "33602", "33606"), now=NOW, version="1")
-    header = text.splitlines()[0]
-    assert "index" not in header and "Qualifies" not in header  # still the locked layout
-    assert text.index("33602") < text.index("33606") < text.index("33603")  # input order kept
-
-
-def test_a_restricted_vertical_cannot_be_given_an_unrestricted_policy() -> None:
-    # UsePolicy(False, "Insurance", "No") is a caller bug; every guard treats it as restricted
-    assert restricted.is_restricted(LIAR)
-    assert restricted.is_restricted(None)
-    assert not restricted.is_restricted(OFF)
-    assert restricted.is_restricted(OFF, FORCED)  # any restricted policy wins
-    assert [lens.name for lens in lenses.available(LIAR)] == ["Context"]
-    assert lenses.presets_for("Retail", LIAR) == []
-    assert lenses.resolve("Retail", LIAR).name == "Context"
-    with pytest.raises(RestrictedUseError):
-        lenses.preset("Renters", LIAR)
-    with pytest.raises(RestrictedUseError):
-        filters.apply(run(OFF), [Rule("owner", ">=", 0.6)], LIAR)
-    assert export.zip_list(run(OFF), LIAR, qualifying=("33606",)) == "33602, 33606, 33603"
 
 
 def test_an_unknown_vertical_is_not_assumed_restricted_by_name() -> None:
@@ -96,7 +51,7 @@ def test_an_unknown_vertical_is_not_assumed_restricted_by_name() -> None:
 
 # ------------------------------------------------------------ restricted survivors (mutants)
 def test_the_restricted_attestation_never_lists_filters_even_if_handed_a_result() -> None:
-    result = filters.apply(run(OFF), [Rule("owner", ">=", 0.6)], OFF)
+    result = filters.apply(run(OFF), [Rule("owner", ">=", 0.6)])
     lines = export.attestation(run(ANSWERED), result, now=NOW, version="1")
     assert "Filters applied: none" in lines
     assert not any(line.startswith("ZIPs matching") for line in lines)
@@ -104,7 +59,7 @@ def test_the_restricted_attestation_never_lists_filters_even_if_handed_a_result(
 
 def test_the_zip_list_keeps_input_order_even_when_the_subset_is_given_out_of_order() -> None:
     a = run()
-    assert export.zip_list(a, OFF, qualifying=("33603", "33602")) == "33602, 33603"
+    assert export.zip_list(a, qualifying=("33603", "33602")) == "33602, 33603"
 
 
 def test_the_restricted_report_ignores_a_requested_order_and_draws_a_neutral_map() -> None:
@@ -128,19 +83,19 @@ def test_the_unrestricted_report_honours_a_requested_order() -> None:
 def test_a_value_exactly_at_the_threshold_qualifies_for_both_comparisons() -> None:
     a = run(OFF)
     at = float(a.value("33602", "pop").estimate)  # exactly 5,000
-    assert "33602" in filters.apply(a, [Rule("pop", ">=", at)], OFF).qualifying
-    assert "33602" in filters.apply(a, [Rule("pop", "<=", at)], OFF).qualifying
-    assert "33602" not in filters.apply(a, [Rule("pop", ">=", at + 1)], OFF).qualifying
-    assert "33602" not in filters.apply(a, [Rule("pop", "<=", at - 1)], OFF).qualifying
+    assert "33602" in filters.apply(a, [Rule("pop", ">=", at)]).qualifying
+    assert "33602" in filters.apply(a, [Rule("pop", "<=", at)]).qualifying
+    assert "33602" not in filters.apply(a, [Rule("pop", ">=", at + 1)]).qualifying
+    assert "33602" not in filters.apply(a, [Rule("pop", "<=", at - 1)]).qualifying
 
 
 def test_an_index_exactly_at_the_threshold_qualifies() -> None:
     a = run(OFF)
     idx = a.zip_index("owner")[0].value  # 33602: round(100 * 0.40 / 0.66) = 61
     assert idx == 61
-    assert "33602" in filters.apply(a, [Rule("owner", ">=", 61, "index")], OFF).qualifying
-    assert "33602" in filters.apply(a, [Rule("owner", "<=", 61, "index")], OFF).qualifying
-    assert "33602" not in filters.apply(a, [Rule("owner", ">=", 62, "index")], OFF).qualifying
+    assert "33602" in filters.apply(a, [Rule("owner", ">=", 61, "index")]).qualifying
+    assert "33602" in filters.apply(a, [Rule("owner", "<=", 61, "index")]).qualifying
+    assert "33602" not in filters.apply(a, [Rule("owner", ">=", 62, "index")]).qualifying
 
 
 CODED = make_artifacts({"99001": Z(4000, 1500, income=250_001, code="top"),
@@ -159,7 +114,7 @@ def test_a_top_coded_median_is_compared_from_its_bound_not_its_stored_value(
     op: str, value: float, qualifies: bool
 ) -> None:
     a = run_coded()
-    got = filters.apply(a, [Rule("median_hh_income", op, value)], OFF)  # type: ignore[arg-type]
+    got = filters.apply(a, [Rule("median_hh_income", op, value)])  # type: ignore[arg-type]
     assert ("99001" in got.qualifying) is qualifies
 
 
@@ -169,24 +124,24 @@ def test_a_top_coded_median_is_compared_from_its_bound_not_its_stored_value(
 def test_a_bottom_coded_median_is_compared_from_its_bound_not_its_stored_value(
     op: str, value: float, qualifies: bool
 ) -> None:
-    got = filters.apply(run_coded(), [Rule("median_hh_income", op, value)], OFF)  # type: ignore[arg-type]
+    got = filters.apply(run_coded(), [Rule("median_hh_income", op, value)])  # type: ignore[arg-type]
     assert ("99002" in got.qualifying) is qualifies
 
 
 def test_a_coded_median_that_cannot_be_decided_is_uncertain_in_both_directions() -> None:
     a = run_coded()
     # "$250,000+" might be 300,000 or more: not a miss, uncertain
-    r = filters.apply(a, [Rule("median_hh_income", ">=", 300_000)], OFF)
+    r = filters.apply(a, [Rule("median_hh_income", ">=", 300_000)])
     assert "99001" not in r.qualifying and r.matches["99001"].uncertain == ("median_hh_income",)
     # "$250,000+" is certainly not at or below 200,000
-    r = filters.apply(a, [Rule("median_hh_income", "<=", 200_000)], OFF)
+    r = filters.apply(a, [Rule("median_hh_income", "<=", 200_000)])
     assert r.matches["99001"].uncertain == ()
     # "$2,500 or less" may be under 1,000: uncertain for ">= 1,000", a certain miss for ">= 3,000"
-    r = filters.apply(a, [Rule("median_hh_income", ">=", 1_000)], OFF)
+    r = filters.apply(a, [Rule("median_hh_income", ">=", 1_000)])
     assert r.matches["99002"].uncertain == ("median_hh_income",)
-    r = filters.apply(a, [Rule("median_hh_income", ">=", 3_000)], OFF)
+    r = filters.apply(a, [Rule("median_hh_income", ">=", 3_000)])
     assert r.matches["99002"].uncertain == ()
-    r = filters.apply(a, [Rule("median_hh_income", "<=", 1_000)], OFF)
+    r = filters.apply(a, [Rule("median_hh_income", "<=", 1_000)])
     assert "99002" not in r.qualifying and r.matches["99002"].uncertain == ("median_hh_income",)
 
 
@@ -205,9 +160,9 @@ def test_the_per_zip_index_tier_is_the_worse_of_the_zip_and_the_benchmark() -> N
 def test_an_index_rule_that_passes_on_an_unreliable_index_is_flagged() -> None:
     a = run(OFF)
     # 33603's owner share is unreliable, so its index is too
-    r = filters.apply(a, [Rule("owner", ">=", 50, "index")], OFF)
+    r = filters.apply(a, [Rule("owner", ">=", 50, "index")])
     assert "33603" in r.qualifying and r.matches["33603"].on_unreliable
-    r2 = filters.apply(a, [Rule("owner", ">=", 50, "index")], OFF, exclude_unreliable=True)
+    r2 = filters.apply(a, [Rule("owner", ">=", 50, "index")], exclude_unreliable=True)
     assert "33603" not in r2.qualifying
 
 
@@ -225,10 +180,8 @@ def test_a_thousand_zip_csv_and_filter_are_fast() -> None:
     }
     a = an.analyze(make_artifacts(world), ParsedInput(zips=tuple(world)), OFF, project_name="Big")
     start = time.perf_counter()
-    r = filters.apply(
-        a, [Rule("owner", ">=", 100, "index"), Rule("hh_kids", ">=", 90, "index")], OFF
-    )
-    text = export.csv_text(a, OFF, r, now=NOW, version="1")
+    r = filters.apply(a, [Rule("owner", ">=", 100, "index"), Rule("hh_kids", ">=", 90, "index")])
+    text = export.csv_text(a, r, now=NOW, version="1")
     assert time.perf_counter() - start < 3.0 and len(text) > 1000
 
 
@@ -239,7 +192,7 @@ def test_a_blank_overlap_zip_is_shown_as_a_full_zip_in_the_columns_too() -> None
     a = an.analyze(ART, parsed, OFF, project_name="Z")
     assert a.in_radius("33606", "hh") == pytest.approx(3500)
     assert a.overlap_pct("33606") == 100.0 and a.overlap_pct("33602") == 50.0
-    text = export.csv_text(a, OFF, None, metric_ids=["owner"], now=NOW, version="1")
+    text = export.csv_text(a, None, metric_ids=["owner"], now=NOW, version="1")
     row = next(line for line in text.splitlines() if '"33606"' in line)
     assert '"ZIP","33606"' in row and ",100,3500,8000," in row
     page = report.render(a, None, geo=None, now=NOW, version="1")
@@ -318,7 +271,7 @@ def test_the_project_name_is_cleaned_in_the_library() -> None:
     assert long.project_name == "a" * 80
     assert a.project_name == "Acme"
     assert an.analyze(ART, parse_paste("33602"), OFF, project_name=" \n ").project_name is None
-    text = export.csv_text(messy, OFF, None, now=NOW, version="1")
+    text = export.csv_text(messy, None, now=NOW, version="1")
     assert "Note: Project: Line one Line two x" in text
 
 
@@ -329,14 +282,14 @@ def test_file_names_drop_bidi_override_characters() -> None:
 def test_csv_metric_ids_are_validated() -> None:
     a = run(OFF)
     with pytest.raises(ValueError, match="Unknown metric"):
-        export.csv_text(a, OFF, None, metric_ids=["nope"], now=NOW, version="1")
+        export.csv_text(a, None, metric_ids=["nope"], now=NOW, version="1")
     with pytest.raises(ValueError, match="twice"):
-        export.csv_text(a, OFF, None, metric_ids=["owner", "owner"], now=NOW, version="1")
+        export.csv_text(a, None, metric_ids=["owner", "owner"], now=NOW, version="1")
 
 
 def test_share_moe_columns_say_they_are_percentage_points() -> None:
     a = run(OFF)
-    header = export.csv_text(a, OFF, None, metric_ids=["owner", "pop"], now=NOW, version="1")
+    header = export.csv_text(a, None, metric_ids=["owner", "pop"], now=NOW, version="1")
     head = header.splitlines()[0]
     assert '"Homeowners MOE (pts)"' in head and '"Population MOE"' in head
 

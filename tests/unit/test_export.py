@@ -12,7 +12,6 @@ from synth_art import Z, make_artifacts
 
 from zipographics import analysis as an
 from zipographics import export, filters, restricted, verticals
-from zipographics.errors import RestrictedUseError
 from zipographics.models import ParsedInput, Rule, UsePolicy
 from zipographics.zips import parse_paste
 
@@ -97,28 +96,28 @@ def test_a_reserved_windows_name_never_appears_as_a_whole_file_name() -> None:
 def test_the_zip_list_has_every_valid_input_zip_in_input_order() -> None:
     a = run()
     assert a.parsed.zips == ("33602", "99999", "33606", "02108", "33603")
-    assert export.zip_list(a, OFF) == "33602, 99999, 33606, 02108, 33603"
-    assert export.zip_list(a, OFF, style="newline") == "33602\n99999\n33606\n02108\n33603"
+    assert export.zip_list(a) == "33602, 99999, 33606, 02108, 33603"
+    assert export.zip_list(a, style="newline") == "33602\n99999\n33606\n02108\n33603"
 
 
 def test_not_found_zips_can_be_dropped_with_the_checkbox() -> None:
     a = run()
-    assert export.zip_list(a, OFF, include_not_found=False) == "33602, 33606, 02108, 33603"
+    assert export.zip_list(a, include_not_found=False) == "33602, 33606, 02108, 33603"
 
 
 def test_a_filter_exports_the_qualifying_zips_in_input_order() -> None:
     a = run()
-    r = filters.apply(a, [Rule("owner", ">=", 0.5)], OFF)
+    r = filters.apply(a, [Rule("owner", ">=", 0.5)])
     assert r.qualifying == ("33606", "02108", "33603")
-    assert export.zip_list(a, OFF, qualifying=r.qualifying) == "33606, 02108, 33603"
-    assert export.zip_list(a, OFF, qualifying=()) == ""
+    assert export.zip_list(a, qualifying=r.qualifying) == "33606, 02108, 33603"
+    assert export.zip_list(a, qualifying=()) == ""
     # "export all instead" is simply not passing the subset
-    assert export.zip_list(a, OFF) == "33602, 99999, 33606, 02108, 33603"
+    assert export.zip_list(a) == "33602, 99999, 33606, 02108, 33603"
 
 
 def test_a_qualifying_subset_must_come_from_the_recognized_zips() -> None:
     with pytest.raises(ValueError, match="99999"):
-        export.zip_list(run(), OFF, qualifying=("99999",))
+        export.zip_list(run(), qualifying=("99999",))
 
 
 @pytest.mark.parametrize("policy", [ANSWERED, FORCED, None])
@@ -128,25 +127,23 @@ def test_restricted_mode_exports_exactly_the_input_zips_whatever_is_passed(
     a = run(policy=ANSWERED)
     for qualifying in (None, ("33606",), ()):
         for style, sep in (("comma", ", "), ("newline", "\n")):
-            got = export.zip_list(
-                a, policy, qualifying=qualifying, include_not_found=False, style=style
-            )  # type: ignore[arg-type]
+            got = export.zip_list(a, qualifying=qualifying, include_not_found=False, style=style)  # type: ignore[arg-type]
             assert got == sep.join(a.parsed.zips)
 
 
 def test_the_zip_list_has_no_footer_or_header() -> None:
-    text = export.zip_list(run(), OFF)
+    text = export.zip_list(run())
     assert "Note" not in text and "ZIP" not in text and "\r" not in text
 
 
 def test_an_empty_input_gives_an_empty_list() -> None:
     a = an.analyze(ART, ParsedInput(zips=("33602",)), OFF)
-    assert export.zip_list(a, OFF, qualifying=()) == ""
+    assert export.zip_list(a, qualifying=()) == ""
 
 
 def test_zip_list_styles_are_validated() -> None:
     with pytest.raises(ValueError, match="style"):
-        export.zip_list(run(), OFF, style="tabs")  # type: ignore[arg-type]
+        export.zip_list(run(), style="tabs")  # type: ignore[arg-type]
 
 
 def test_the_ad_platform_notice_appears_only_in_restricted_mode() -> None:
@@ -190,7 +187,7 @@ def test_an_untitled_project_says_so() -> None:
 
 def test_the_attestation_lists_the_filters_applied() -> None:
     a = run()
-    r = filters.apply(a, [Rule("owner", ">=", 0.5), Rule("hh_kids", ">=", 115, "index")], OFF)
+    r = filters.apply(a, [Rule("owner", ">=", 0.5), Rule("hh_kids", ">=", 115, "index")])
     text = lines(a, r)
     assert "Filters applied: Homeowners ≥ 50 %; Households with children, index ≥ 115" in text
     assert f"ZIPs matching: {len(r.qualifying)} of {len(r.matches)}" in text
@@ -206,13 +203,13 @@ def test_the_attestation_names_in_radius_mode() -> None:
 
 def test_restricted_attestation_never_claims_a_filter() -> None:
     a = run(policy=ANSWERED)
-    r = filters.apply(a, [], ANSWERED)
+    r = filters.apply(a, [])
     assert "Filters applied: none" in lines(a, r)
 
 
 # --------------------------------------------------------------------- CSV
-def csv_text(a: an.Analysis, policy: UsePolicy | None = OFF, result=None, **kw) -> str:  # type: ignore[no-untyped-def]
-    return export.csv_text(a, policy, result, now=NOW, version="1.2.3", **kw)
+def csv_text(a: an.Analysis, result=None, **kw) -> str:  # type: ignore[no-untyped-def]
+    return export.csv_text(a, result, now=NOW, version="1.2.3", **kw)
 
 
 def test_the_plain_csv_quotes_zips_as_text_and_uses_crlf() -> None:
@@ -221,12 +218,12 @@ def test_the_plain_csv_quotes_zips_as_text_and_uses_crlf() -> None:
     assert '"02108"' in text and '"33602"' in text
     assert "\r\n" in text and "\n" not in text.replace("\r\n", "")
     assert not text.startswith(BOM)
-    assert export.csv_bytes(run(), OFF, None, now=NOW, version="1.2.3")[:3] != b"\xef\xbb\xbf"
+    assert export.csv_bytes(run(), None, now=NOW, version="1.2.3")[:3] != b"\xef\xbb\xbf"
 
 
 def test_the_excel_csv_has_a_bom_and_formula_wrapped_zips() -> None:
     a = run()
-    raw = export.csv_bytes(a, OFF, None, excel=True, now=NOW, version="1.2.3")
+    raw = export.csv_bytes(a, None, excel=True, now=NOW, version="1.2.3")
     assert raw[:3] == b"\xef\xbb\xbf"
     text = raw.decode("utf-8-sig")
     assert '"=""02108"""' in text and '"=""33602"""' in text
@@ -327,8 +324,8 @@ def test_overlap_columns_appear_for_zipcator_input() -> None:
 
 def test_a_qualifies_column_appears_when_filters_are_active() -> None:
     a = run()
-    r = filters.apply(a, [Rule("owner", ">=", 0.5)], OFF)
-    rows = table_of(csv_text(a, OFF, r, metric_ids=["owner"]))
+    r = filters.apply(a, [Rule("owner", ">=", 0.5)])
+    rows = table_of(csv_text(a, r, metric_ids=["owner"]))
     assert rows[0][-1] == "Qualifies"
     got = {row[1]: row[-1] for row in rows[1:5]}
     assert got == {
@@ -338,53 +335,29 @@ def test_a_qualifies_column_appears_when_filters_are_active() -> None:
         "33603": "Yes (unreliable estimate)",
     }  # 33603: owner share is unreliable
     assert rows[5][-1] == "" and rows[6][-1] == ""
-    assert "Qualifies" not in table_of(csv_text(a, OFF, None, metric_ids=["owner"]))[0]
+    assert "Qualifies" not in table_of(csv_text(a, None, metric_ids=["owner"]))[0]
 
 
 def test_an_unreliable_qualifier_is_marked_in_the_qualifies_column() -> None:
     a = run()
-    r = filters.apply(a, [Rule("owner", "<=", 0.6)], OFF)
-    rows = table_of(csv_text(a, OFF, r, metric_ids=["owner"]))
+    r = filters.apply(a, [Rule("owner", "<=", 0.6)])
+    rows = table_of(csv_text(a, r, metric_ids=["owner"]))
     got = {row[1]: row[-1] for row in rows[1:5]}
     assert got["33603"] == "Yes (unreliable estimate)"
 
 
-def test_restricted_csv_has_no_filter_state_no_index_and_input_order() -> None:
-    a = run(policy=ANSWERED)
-    rows = table_of(
-        csv_text(a, ANSWERED, filters.apply(a, [], ANSWERED), metric_ids=["owner", "pop"])
-    )
-    head = rows[0]
-    assert not any("index" in h.lower() or h == "Qualifies" for h in head)
-    assert [r[1] for r in rows[1:5]] == ["33602", "33606", "02108", "33603"]
-    assert any("Restricted mode: on" in line for line in footer_of(csv_text(a, ANSWERED)))
-
-
-def test_restricted_csv_refuses_a_filter_result_with_rules() -> None:
-    a = run()
-    r = filters.apply(a, [Rule("owner", ">=", 0.5)], OFF)
-    with pytest.raises(RestrictedUseError):
-        csv_text(a, ANSWERED, r)
-    with pytest.raises(RestrictedUseError):
-        csv_text(a, None, r)
-
-
 def test_restricted_csv_ignores_a_requested_order() -> None:
     a = run(policy=ANSWERED)
-    rows = table_of(
-        csv_text(a, ANSWERED, order=("33603", "33602", "33606", "02108"), metric_ids=["pop"])
-    )
+    rows = table_of(csv_text(a, order=("33603", "33602", "33606", "02108"), metric_ids=["pop"]))
     assert [r[1] for r in rows[1:5]] == ["33602", "33606", "02108", "33603"]
 
 
 def test_an_unrestricted_csv_follows_a_requested_order() -> None:
     a = run()
-    rows = table_of(
-        csv_text(a, OFF, order=("33603", "33602", "33606", "02108"), metric_ids=["pop"])
-    )
+    rows = table_of(csv_text(a, order=("33603", "33602", "33606", "02108"), metric_ids=["pop"]))
     assert [r[1] for r in rows[1:5]] == ["33603", "33602", "33606", "02108"]
     with pytest.raises(ValueError, match="order"):
-        csv_text(a, OFF, order=("33603", "99999"))
+        csv_text(a, order=("33603", "99999"))
 
 
 def test_default_columns_follow_the_lens() -> None:

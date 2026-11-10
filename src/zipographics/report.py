@@ -31,7 +31,7 @@ from zipographics.charts import ChartData
 from zipographics.export import NOTE_CODED, NOTE_MOE, NOTE_ZIP, attestation, default_metrics
 from zipographics.filters import FilterResult, describe
 from zipographics.models import UsePolicy
-from zipographics.restricted import BANNER, BANNER_TITLE, is_restricted, require_unrestricted
+from zipographics.restricted import BANNER, BANNER_TITLE, require_unrestricted
 from zipographics.review import review_lines
 from zipographics.ui import (
     DAGGER,
@@ -327,7 +327,7 @@ def render(
 ) -> str:
     """The report as one HTML string. Restricted mode refuses a result that carries rules."""
     policy: UsePolicy = a.policy
-    locked = is_restricted(policy)
+    locked = a.restricted
     if locked and result is not None and result.active:
         require_unrestricted(policy, "select")
     shown_filters = bool(result is not None and result.active and not locked)

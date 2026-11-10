@@ -649,10 +649,29 @@ the real data crashed on a Windows (cp1252) console at the first "->" arrow in t
 7. **`mapview.layer(profile, metric, policy)` (SPEC §5.7) is not in Phase 5.** The report's static map already
    takes the neutral path in restricted mode (tested); the interactive folium layer and its restricted-mode
    test belong to Phase 6 with the map. Recorded here so it is not lost.
-8. **Documented behaviors, not changed.** A value shown as "25.0 %" can fail `>= 25 %` when the true share is
-   0.2496 (the filter compares the unrounded value; index rules compare the rounded integer index, like the
-   displayed index). Coded medians keep the "use with caution" tier and carry no MOE or index. The Trade
+8. **Documented behaviors, not changed.** (The filter-rounding mismatch first listed here was changed by the
+   owner's request: see P10.) Coded medians keep the "use with caution" tier and carry no MOE or index. The Trade
    area CSV row leaves the in-radius columns blank (its values are already weighted). `--column` is ignored
    for a Zipcator file (the format fixes the column). `cli._tolerant` switches the real stdout/stderr to
    `errors="replace"` for the life of the process. Chart bars carry no reliability marker (SPEC is silent; the
    data has `ChartRow.tier` for Phase 6 to use).
+
+**P10. Filters compare at displayed precision (owner request, 2026-11-10; supersedes the old P9.8 note).** A rule
+on a value compares what the table shows: shares to one decimal of a percent (0.2496 shows "25.0 %" and counts
+as 0.25), dollars, counts and years-built to whole numbers, median age to one decimal, ratios to two decimals;
+an index was already a whole number. `ui.displayed_value(metric, value)` is the one rounding rule and is built
+on the same format table as `ui.fmt_number`, so display and filter cannot drift apart. Property test: for any
+share or dollar amount, a threshold equal to the displayed value always qualifies for `>=` and `<=`
+(`tests/unit/test_filter_precision.py`). Coded medians compare their bound (whole dollars). A small slack
+(1e-9 relative) absorbs float noise. Consequence: a ZIP shown as "25.0 %" meets "25 %" even when its unrounded
+share is 24.96 %; a ZIP shown as "49.9 %" does not meet "50 %".
+
+**P11. One policy, on the Analysis (owner request, 2026-11-10; changes P2).** Functions that take an Analysis
+(`filters.apply`, `table.order`, `export.zip_list/csv_text/csv_bytes`, `report.render`) no longer take a
+`policy` argument: the Analysis carries the Step-1 policy (`Analysis.policy`) and `Analysis.restricted` reads
+it the strict way (restricted if the flag says so *or* the vertical named is restricted). There is no second
+policy to pass, so no permissive one can be passed next to a restricted analysis (a test asserts none of these
+signatures has a policy parameter). Functions with no Analysis (`lenses.available/resolve/presets_for/preset`,
+`export.ad_platform_notice`) keep their `policy` argument and fail closed on `None`. Cost: about 130 test call
+sites updated; tests are parametrized over every guarded function, three kinds of restricted analysis (forced,
+answered, a restricted industry with a permissive flag) and every metric (`tests/unit/test_restricted_guards.py`).

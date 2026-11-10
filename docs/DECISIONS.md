@@ -351,3 +351,27 @@ values at those proportions give the interval, `SE(median) = ½ (v_hi − v_lo)`
 SE`. Cumulative "through bracket k" is used (not "below k") so the proportion is the share at or
 below the bracket boundary the median lies in; it is a labeled approximation. A worked example is
 in `tests/unit/test_stats_median.py`.
+
+**D9 (2026-11-09). Metric registry design (SPEC §4.2, Appendix C).** `zipographics.metrics`
+declares 74 metrics (Appendix C) over about 270 Census variables.
+- **Variable keys.** For detailed tables the key is the Census variable ID (`B19001_002`; these are
+  stable by table row). Each single cell carries a label regex and each bracket table carries expected
+  bounds; the Phase 3 build checks them against `variables.json` and fails with a clear message, and
+  falls back to resolving by `(table, label)` if an ID moved. Data Profile items (DP03) have symbolic
+  keys (`DP03_UNINS`, ...) resolved only by label regex, since their IDs shift between vintages. Parquet
+  columns are `<key>_e` / `_m` (and `_code` for the five published medians). This is a small
+  deviation from SPEC §4.2's "resolve everything by (table, label)": IDs are the primary key
+  because they are stable for `B` tables and the label check keeps the safety.
+- **Expected IDs and labels are written from memory of the ACS tables and are unverified until
+  Phase 4**, which resolves every key against the real `variables.json`. Bracket cells were
+  verified structurally here (contiguous, ordered, complete, partition tests).
+- **Vehicles per household** is computed from B25044 (cells weighted 1-5, "5 or more" as 5, so
+  "at least"). SPEC §6.5 prefers B25046 (aggregate vehicles) if present at ZCTA level; switching
+  is a registry-only change once Phase 4 checks availability.
+- **Median brackets run ascending.** `median_year_built` lists B25034 rows 011 -> 002 (oldest
+  first); the open bottom (`1939 or earlier`) and top (`2020 or later`) brackets are unbounded,
+  so a median landing there is reported as a bound. Income, value and rent use 0 as the lower
+  bound of their lowest bracket (SPEC §6.4 assumption); age brackets start at 0.
+- **Limited English** sums the twelve "less than very well" cells of C16001 (one per language group).
+- `indexable` is derived: every kind except `count`.
+- `metrics.py` has a ruff per-file ignore for E501/RUF002 in `pyproject.toml`: it is declarative data.

@@ -626,3 +626,33 @@ section. Restricted: banner, neutral fill, no filter section, input order.
 vertical is restricted; a restricted vertical ignores `--restricted no`; no `--vertical` means "Other".
 `--vertical` accepts a unique fragment. Output streams are switched to `errors="replace"`: running the CLI on
 the real data crashed on a Windows (cp1252) console at the first "->" arrow in the review line (QA bug 33).
+
+**P9. Phase 5 QA triage (2026-11-10).**
+1. **The stricter policy wins everywhere.** Guards now ask `restricted.is_restricted(policy, a.policy)`: restricted
+   if the passed policy *or* the Analysis's own policy is restricted, if either is missing, or if the vertical
+   named is a restricted one (so `UsePolicy(False, "Insurance", "No")` cannot unlock anything). A caller can no
+   longer pass a permissive `policy` next to a restricted Analysis (QA finding 3).
+2. **Coded medians: "uncertain" is symmetric.** A top-coded "$250,000+" against `>= 300,000` is *uncertain*
+   (the true value may be 300,000 or more), not a plain miss; against `<= 200,000` it is a certain miss.
+   Bottom codes mirror that. Uncertain ZIPs still do not qualify (SPEC §5.5); they are listed in
+   `ZipMatch.uncertain`. Supersedes the wording of P3.
+3. **A ZIP with a blank Zipcator overlap is a full ZIP in every view** (it was, in the trade area; the CSV and
+   report columns showed blank). It now shows overlap 100 % and its full counts (`Analysis.overlap_pct`).
+   `analyze(mode=...)` rejects unknown modes.
+4. **Report map:** top/bottom-coded values and unknown values are drawn neutral (a bound is not an exact
+   number, SPEC §6.2); one distinct value makes one bin; legend `$` is escaped (matplotlib mathtext).
+5. **Project name** is cleaned in the library (`ui.clean_text`): zero-width and bidirectional-override
+   characters removed, control characters and whitespace runs become one space, cut at 80 characters, so it can
+   not put a newline in a footer cell or a right-to-left override in a file name.
+6. **CSV:** per-metric index columns are computed once (`Analysis.zip_index` is cached; 1,000 ZIPs took 13.8 s,
+   now well under a second); share MOE columns are headed `MOE (pts)`; unknown or duplicate `metric_ids` raise.
+7. **`mapview.layer(profile, metric, policy)` (SPEC §5.7) is not in Phase 5.** The report's static map already
+   takes the neutral path in restricted mode (tested); the interactive folium layer and its restricted-mode
+   test belong to Phase 6 with the map. Recorded here so it is not lost.
+8. **Documented behaviors, not changed.** A value shown as "25.0 %" can fail `>= 25 %` when the true share is
+   0.2496 (the filter compares the unrounded value; index rules compare the rounded integer index, like the
+   displayed index). Coded medians keep the "use with caution" tier and carry no MOE or index. The Trade
+   area CSV row leaves the in-radius columns blank (its values are already weighted). `--column` is ignored
+   for a Zipcator file (the format fixes the column). `cli._tolerant` switches the real stdout/stderr to
+   `errors="replace"` for the life of the process. Chart bars carry no reliability marker (SPEC is silent; the
+   data has `ChartRow.tier` for Phase 6 to use).

@@ -184,3 +184,48 @@ MOE: median **1.14**, p10 0.79, p90 1.77. Coverage among ZCTAs with population (
 income 96.2 %, year built 97.0 %, per capita income 98.5 %, median age 98.9 % (published medians and means
 are suppressed for small areas). Sentinels, top/bottom codes, label resolution and the 5-year notes page:
 DECISIONS "Phase 4".
+
+### Phase 5: verticals, restricted, lenses, analysis, filters, export, report, CLI (2026-11-10)
+Independent `qa-reviewer` (fresh context; scratch scripts and a repo copy only; never touched `.env`). It ran 60
+hand-made mutants and wrote bypass probes for every restricted-mode path. **What held up:** removing the
+restricted check in `filters.apply`, `table.order`, `lenses.available/resolve/presets_for/preset`,
+`export.zip_list`, `export.csv_text`, `report.render` was caught; fail-closed on a missing policy and on case
+variants of the order key; verticals, lens cards/charts/presets and all 11 preset thresholds match Appendix D;
+Appendix B tags match the registry; filter semantics (AND, null never qualifies, share validation, 6-rule cap,
+coded bounds); ZIP lists; CSV leading zeros through `csv` and `pandas dtype=str`, formula defusal for every
+leading character, footer; Windows file names; report self-containment and HTML escaping; CLI import graph and
+exit codes.
+
+| # | severity | finding | handling |
+|---|---|---|---|
+| 1 | HIGH | unrestricted report crashed for one ZIP or equal map values (`IndexError` in the legend) | **Fixed** (bug 34), real-data + synthetic tests |
+| 2 | HIGH | report crashed when a ZIP had no value for the map metric (mixed hex and RGBA fills; about 2.6 % of real ZIPs have no median age) | **Fixed** (bug 35) |
+| 3 | MEDIUM | guards trusted the `policy` argument over the Analysis's own; `UsePolicy(False, "Insurance", "No")` was accepted | **Fixed** (bug 36, DECISIONS P9.1) |
+| 4 | MEDIUM | `csv_text` took 13.8 s and `filters.apply` 2.3 s for 1,000 ZIPs (index column recomputed per ZIP) | **Fixed** (bug 37) |
+| 5 | MEDIUM | blank-overlap ZIP full in the trade area but blank in the CSV/report columns | **Fixed** (bug 38) |
+| 6 | MEDIUM | 14 surviving mutants (restricted report map and order, attestation filters, ZIP-list order, `>=`/`<=` at the threshold, coded boundary, index tier) | **Fixed**: tests in `test_phase5_regressions.py`; the two equivalent mutants are unreachable code; county/Trade-area label defusal left untested (values come from data, not users) |
+| 7 | MEDIUM | `mapview.layer` not implemented, deferral unrecorded | **Deferred to Phase 6**, recorded (P9.7) |
+| L | LOW | coded "uncertain" asymmetric | **Fixed** (bug 39, P9.2) |
+| L | LOW | mathtext ate `$` in map legends; coded values shaded as exact | **Fixed** (bug 40) |
+| L | LOW | project name not validated (newline in footer cell, bidi override in file name) | **Fixed** (bug 41) |
+| L | LOW | duplicate/unknown `metric_ids`; MOE header without unit; report caption double period | **Fixed** |
+| L | LOW | CLI: unknown `--lens` exit 4; silent override of `--restricted no`; positional ZIPs missing from a Zipcator file not listed as full ZIPs; `analyze(mode="typo")` | **Fixed** |
+| L | LOW | rounding display vs filter; coded tier without MOE; Trade-area in-radius blank; `--column` ignored for Zipcator; `_tolerant` global; chart reliability marker | **Documented, not changed** (P9.8) |
+| L | LOW | README footer / `skipfooter` convention | **Deferred to Phase 7** (README) |
+
+New bugs: 33 the CLI crashed on a Windows (cp1252) console at the first arrow character (found running it on the
+real data; `test_a_console_that_cannot_encode_the_arrows_does_not_crash_the_cli`); 34-35 report crashes
+(`test_a_single_zip_report_with_a_map_does_not_crash`, `test_a_zip_with_no_value_for_the_map_metric_is_drawn_neutral_not_a_crash`,
+real-data `test_a_single_zip_report_renders_with_the_real_map`, `test_zips_with_null_values_render_with_the_real_map`);
+36 `test_a_policy_that_disagrees_with_a_restricted_analysis_cannot_unlock_*` (4) and
+`test_a_restricted_vertical_cannot_be_given_an_unrestricted_policy`; 37
+`test_the_index_column_is_computed_once_per_metric`, `test_a_thousand_zip_csv_and_filter_are_fast`; 38
+`test_a_blank_overlap_zip_is_shown_as_a_full_zip_in_the_columns_too`; 39
+`test_a_coded_median_that_cannot_be_decided_is_uncertain_in_both_directions`; 40
+`test_dollar_legend_labels_are_not_eaten_by_mathtext`, `test_the_map_never_shades_by_a_top_coded_value_as_if_it_were_exact`;
+41 `test_the_project_name_is_cleaned_in_the_library`, `test_file_names_drop_bidi_override_characters`.
+
+Gates after triage: ruff, format, mypy, size and secrets pass; **1,739 default tests** (coverage **98.06 %**, line +
+branch), **56 `data` tests** (47 artifact + 9 real-data CLI). CLI end to end on the real data: Boston (8
+Excel-mangled ZIPs, same result as the correct list), the Tampa set with a restricted vertical, Puerto Rico, a
+1,000-ZIP file with report and CSV.

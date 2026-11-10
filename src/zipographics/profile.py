@@ -139,6 +139,21 @@ def _agg(e: F, m: F, coef: F, w: F, axes: tuple[int, ...]) -> _Agg:
     return _Agg(est, moe, (~present).any(axis=axes))
 
 
+def _paired(ne: F, nm: F, de: F, dm: F) -> tuple[F, F, F, F]:
+    """Trade-area ratios must compare like with like: a ZIP with no numerator value at all, or no
+    denominator value at all, leaves *both* sums (else its people inflate the denominator and the
+    share is biased low). The ZIP is then reported as missing, so the result is flagged incomplete.
+    Real 2020-2024 data has such ZIPs for many variables (DECISIONS B17)."""
+    keep = (~np.isnan(ne)).any(axis=0) & (~np.isnan(de)).any(axis=0)
+    mask = keep[None, :]
+    return (
+        np.where(mask, ne, np.nan),
+        np.where(mask, nm, np.nan),
+        np.where(mask, de, np.nan),
+        np.where(mask, dm, np.nan),
+    )
+
+
 def _ones(k: int) -> F:
     return np.ones(k)
 
@@ -169,8 +184,12 @@ def _compute(
         return _Result(a.est, a.moe, a.incomplete, none_code, "published" if single else "derived")
 
     if isinstance(spec, ShareSpec):
-        num = _agg(*data.block(spec.num), _ones(len(spec.num)), w, axes)
-        den = _agg(*data.block(spec.den), _ones(len(spec.den)), w, axes)
+        ne, nm = data.block(spec.num)
+        de, dm = data.block(spec.den)
+        if axes == (0, 1):
+            ne, nm, de, dm = _paired(ne, nm, de, dm)
+        num = _agg(ne, nm, _ones(len(spec.num)), w, axes)
+        den = _agg(de, dm, _ones(len(spec.den)), w, axes)
         with np.errstate(divide="ignore", invalid="ignore"):
             raw = num.est / den.est
         valid = ~np.isnan(num.est) & (den.est > 0)
@@ -184,8 +203,12 @@ def _compute(
 
     if isinstance(spec, RatioSpec):
         coef = np.array([c for _, c in spec.num], dtype=float)
-        num = _agg(*data.block([k for k, _ in spec.num]), coef, w, axes)
-        den = _agg(*data.block(spec.den), _ones(len(spec.den)), w, axes)
+        ne, nm = data.block([k for k, _ in spec.num])
+        de, dm = data.block(spec.den)
+        if axes == (0, 1):
+            ne, nm, de, dm = _paired(ne, nm, de, dm)
+        num = _agg(ne, nm, coef, w, axes)
+        den = _agg(de, dm, _ones(len(spec.den)), w, axes)
         with np.errstate(divide="ignore", invalid="ignore"):
             est = np.where((den.est > 0) & ~np.isnan(num.est), num.est / den.est, np.nan)
         moe = np.where(np.isnan(est), np.nan, vstats.moe_ratio(num.est, num.moe, den.est, den.moe))

@@ -148,8 +148,16 @@ _CELL_LABELS: dict[str, str] = {
     "B25003_003": _t("Renter occupied"),
     "B25024_002": _t("1, detached"),
     "B25024_003": _t("1, attached"),
+    "B25024_004": _t("2"),
+    "B25024_005": _t("3 or 4"),
+    "B25024_006": _t("5 to 9"),
+    "B25024_007": _t("10 to 19"),
+    "B25024_008": _t("20 to 49"),
+    "B25024_009": _t("50 or more"),
     "B25024_010": _t("Mobile home"),
-    "B25046_001": r"aggregate number of vehicles available:?$",
+    "B25024_011": _t("Boat, RV, van, etc."),
+    **{f"B25038_{n:03d}": r"owner occupied:?!!moved in" for n in range(4, 9)},
+    **{f"B25038_{n:03d}": r"renter occupied:?!!moved in" for n in range(11, 16)},
     "B25044_003": _t("Owner occupied", "No vehicle available"),
     "B25044_010": _t("Renter occupied", "No vehicle available"),
     **{f"B25044_{4 + i:03d}": _t("Owner occupied", v) for i, v in enumerate(_VEHICLES)},
@@ -432,22 +440,26 @@ _share("mobile_home", "Mobile homes", "proxy_other", _cells("B25024", 10), _cell
        "housing units", "Share of units that are mobile homes (ACS B25024).")  # fmt: skip
 _share(
     "new_movers",
-    "New movers",
+    "Moved in: most recent period",
     "proxy_other",
     (
-        _var("B25038_003", r"moved in \d{4} or later"),
-        _var("B25038_010", r"moved in \d{4} or later"),
+        _var("B25038_003", r"owner occupied:?!!moved in \d{4} or later"),
+        _var("B25038_010", r"renter occupied:?!!moved in \d{4} or later"),
     ),
     _cells("B25038", 1),
     "occupied housing units",
-    "Share of households whose householder moved in during the most recent ACS category (B25038).",
+    "Share of households whose householder moved in during the most recent ACS period (ACS "
+    "B25038). The period's label (for example '2023 or later') comes from the data's variable "
+    "labels and moves with each vintage.",
 )
 
 # ----------------------------------------------------------------------------- vehicles
+_VEH_WEIGHTS = [(4, 1), (5, 2), (6, 3), (7, 4), (8, 5), (11, 1), (12, 2), (13, 3), (14, 4), (15, 5)]
 _add("veh_per_hh", "Vehicles per household", "ratio", "ratio",
-     RatioSpec(((_var("B25046_001"), 1.0),), _cells("B25044", 1)),
+     RatioSpec(tuple((_var(f"B25044_{n:03d}"), float(w)) for n, w in _VEH_WEIGHTS),
+               _cells("B25044", 1)),
      "proxy_other", "occupied housing units",
-     "Aggregate vehicles available divided by occupied housing units (ACS B25046 / B25044).")  # fmt: skip
+     "At least this many vehicles per household: '5 or more' is counted as 5 (ACS B25044).")  # fmt: skip
 _share("veh_0", "No vehicle", "proxy_other", _cells("B25044", 3, 10), _cells("B25044", 1),
        "occupied housing units", "Share of households with no vehicle available (ACS B25044).")  # fmt: skip
 _share("veh_2p", "2+ vehicles", "proxy_other", _cells("B25044", 5, 6, 7, 8, 12, 13, 14, 15),
@@ -547,6 +559,38 @@ _share(
     "civilian noninstitutionalized population",
     "Share of the civilian noninstitutionalized population with no health insurance (ACS DP03).",
 )
+
+# ----------------------------------------------------------------------------- chart categories
+# Appendix D lens charts: units in structure, tenure by move-in, vehicles available. SPEC §4.3 stores
+# registry variables only, so every cell a chart needs is a registry metric (DECISIONS B17). Each
+# group partitions its universe: with single_family, mobile_home and new_movers, veh_0 above.
+_U = _cells("B25024", 1)
+for _id, _name, _rows in [
+    ("units_2_4", "2-4 unit buildings", (4, 5)),
+    ("units_5_19", "5-19 unit buildings", (6, 7)),
+    ("units_20p", "20+ unit buildings", (8, 9)),
+    ("units_other", "Boat, RV, van, etc.", (11,)),
+]:
+    _share(_id, _name, "proxy_other", _cells("B25024", *_rows), _U, "housing units",
+           f"Share of housing units that are {_name.lower()} (ACS B25024).")  # fmt: skip
+_M = _cells("B25038", 1)
+for _id, _name, _own, _rent in [
+    ("movers_2", "Moved in: 2nd most recent period", (4,), (11,)),
+    ("movers_3", "Moved in: 3rd most recent period", (5,), (12,)),
+    ("movers_4", "Moved in: 4th most recent period", (6,), (13,)),
+    ("movers_older", "Moved in: before that", (7, 8), (14, 15)),
+]:
+    _share(_id, _name, "proxy_other", _cells("B25038", *_own, *_rent), _M, "occupied housing units",
+           "Share of households by when the householder moved in (ACS B25038); the period's "
+           "label comes from the data's variable labels.")  # fmt: skip
+_V = _cells("B25044", 1)
+for _id, _name, _rows in [
+    ("veh_1", "1 vehicle", (4, 11)),
+    ("veh_2", "2 vehicles", (5, 12)),
+    ("veh_3p", "3+ vehicles", (6, 7, 8, 13, 14, 15)),
+]:
+    _share(_id, _name, "proxy_other", _cells("B25044", *_rows), _V, "occupied housing units",
+           f"Share of households with {_name.lower()} available (ACS B25044).")  # fmt: skip
 
 # ----------------------------------------------------------------------------- public API
 REGISTRY: tuple[Metric, ...] = tuple(REGISTRY_LIST)

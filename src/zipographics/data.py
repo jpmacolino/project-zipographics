@@ -80,10 +80,16 @@ def load(data_dir: Path | None = None, *, registry: _HasVariables | None = None)
     _check_columns(profile, ["zip", *_PROFILE_ATTRIBUTES, *var_columns], "zcta_profile.parquet")
     if not all(isinstance(z, str) for z in profile["zip"]):
         raise _not_built("the zip column must hold text, never numbers")
+    if not profile["zip"].str.fullmatch(r"[0-9]{5}").all():
+        raise _not_built("the zip column must hold 5-character ZIPs")
+    if not all(isinstance(s, str) for s in profile["state_fips"].dropna()):
+        raise _not_built("the state_fips column must hold text")
     profile = profile.set_index("zip")
 
     benchmarks = _read(folder / "benchmarks.parquet")
     _check_columns(benchmarks, [*_BENCHMARK_COLUMNS, *estimate_columns], "benchmarks.parquet")
+    if not all(isinstance(s, str) for s in benchmarks["geo_id"]):
+        raise _not_built("the benchmark geo_id column must hold text")
 
     meta_path = folder / "metadata.json"
     if not meta_path.exists():

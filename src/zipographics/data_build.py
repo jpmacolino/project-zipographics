@@ -527,9 +527,24 @@ def validate_artifacts(
         missing = sorted(wanted - have)
         if missing:
             problems.append(f"no {level} benchmark for {', '.join(missing[:5])}")
+    problems += _benchmark_problems(benchmarks, registry)
     if "county_fips" in profile.columns and "county" in profile.columns and len(profile):
         # a county name with no county id means the ACS has no county row for that ZCTA's county
-        gap = float((profile["county"].notna() & profile["county_fips"].isna()).mean())
+        gapped = profile["county"].notna() & profile["county_fips"].isna()
+        if "state" in profile.columns:
+            outside = gapped & ~profile["state"].isin(config.COUNTY_GAP_STATES)
+        else:
+            outside = gapped
+        if outside.any():
+            where = (
+                sorted(set(profile.loc[outside, "state"].dropna())) if "state" in profile else []
+            )
+            problems.append(
+                f"{int(outside.sum())} ZCTAs outside Connecticut have no county benchmark"
+                + (f" ({', '.join(where[:5])})" if where else "")
+                + "; the county relationship join may be broken"
+            )
+        gap = float(gapped.mean())
         if gap > config.COUNTY_GAP_LIMIT:
             problems.append(
                 f"{gap:.1%} of ZCTAs have no county benchmark "
@@ -552,22 +567,80 @@ def validate_artifacts(
             col = f"{key}_e"
             if col in profile.columns:
                 coverage[key] = float(populated[col].notna().mean()) if len(populated) else 0.0
-        for key in _core_keys(registry):
+        core = set(_core_keys(registry))
+        for key in registry.variables:
+            if f"{key}_e" not in profile.columns:
+                continue  # already reported as a missing column
             share = coverage.get(key, 0.0)
             is_median = registry.variables[key].is_median
-            floor = config.MEDIAN_COVERAGE_FLOOR if is_median else config.COVERAGE_FLOOR
-            if share < floor:
+            if key in core:
+                floor = config.MEDIAN_COVERAGE_FLOOR if is_median else config.COVERAGE_FLOOR
                 kind = "published median" if is_median else "core KPI variable"
+            else:
+                floor, kind = config.VARIABLE_COVERAGE_FLOOR, "variable"
+            if share < floor:
                 problems.append(
                     f"{kind} {key} is non-null for only {share:.1%} of ZCTAs with "
                     f"population (need {floor:.0%})"
                 )
     else:
         problems.append(f"column {pop_col} is missing, so coverage cannot be checked")
+    problems += _total_problems(profile, registry)
 
     if geo is not None:
         problems += geometry_problems(geo, set(zips))
     return problems, coverage
+
+
+def _benchmark_problems(benchmarks: pd.DataFrame, registry: Registry) -> list[str]:
+    """The national row and every state row need a value for every variable (county rows may have
+    gaps: small counties are suppressed). A wholly null benchmark column would otherwise turn every
+    index for that metric into "unknown" without any error."""
+    problems: list[str] = []
+    if "geo_level" not in benchmarks.columns:
+        return problems
+    for level, label in (("us", "national"), ("state", "state")):
+        rows = benchmarks[benchmarks["geo_level"] == level]
+        if rows.empty:
+            continue
+        empty = [
+            key
+            for key in registry.variables
+            if f"{key}_e" in rows.columns and rows[f"{key}_e"].isna().any()
+        ]
+        if empty:
+            problems.append(
+                f"{label} benchmark has no value for {', '.join(empty[:5])}"
+                + (f" and {len(empty) - 5} more" if len(empty) > 5 else "")
+            )
+    return problems
+
+
+#: Totals that two ACS tables both report for the same universe; they must agree ZCTA by ZCTA.
+_TOTAL_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("B01003_001", "B01001_001", "B02001_001", "B03003_001"),  # total population
+    (
+        "B11001_001", "B25003_001", "B19001_001", "B25044_001", "B25038_001", "B28002_001",
+        "B11005_001",
+    ),  # households = occupied housing units
+)  # fmt: skip
+
+
+def _total_problems(profile: pd.DataFrame, registry: Registry) -> list[str]:
+    problems: list[str] = []
+    for group in _TOTAL_GROUPS:
+        present = [k for k in group if k in registry.variables and f"{k}_e" in profile.columns]
+        for other in present[1:]:
+            both = profile[[f"{present[0]}_e", f"{other}_e"]].dropna()
+            if both.empty:
+                continue
+            share = float((both.iloc[:, 0] != both.iloc[:, 1]).mean())
+            if share > config.TOTAL_DISAGREE_LIMIT:
+                problems.append(
+                    f"{present[0]} and {other} disagree for {share:.1%} of ZCTAs "
+                    f"(limit {config.TOTAL_DISAGREE_LIMIT:.1%}); a column may be misaligned"
+                )
+    return problems
 
 
 def _code_cross_check(profile: pd.DataFrame, registry: Registry) -> dict[str, Any]:
@@ -592,6 +665,13 @@ def _code_cross_check(profile: pd.DataFrame, registry: Registry) -> dict[str, An
 class BuildResult:
     paths: dict[str, Path]
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+_GEO_NOTE = (
+    "Boundaries are simplified for display (shared edges simplified once, so neighbours still "
+    "meet). Shapes are indicative: small urban ZIPs can differ visibly from the Census "
+    "cartographic boundary file and areas are not to be computed from them."
+)
 
 
 def _geometry(
@@ -628,6 +708,7 @@ def _geometry(
             source=_GEO_SOURCE_CENSUS,
             tolerance_deg=tolerance,
             method="shapely.coverage_simplify (shared edges simplified once)",
+            note=_GEO_NOTE,
         )
         records.append(_source_record("zcta_boundaries", sources.zcta_url, path))
     return gdf, info, records
@@ -678,6 +759,10 @@ def geometry_problems(geo: gpd.GeoDataFrame, profile_zips: set[str] | None) -> l
     """Checks on the map: no duplicate or null geometries; with a profile, ZIPs ⊆ profile and
     near-complete coverage of it."""
     problems: list[str] = []
+    if geo.crs is None or geo.crs.to_epsg() != 4326:
+        problems.append("the map must be in EPSG:4326 (longitude/latitude, WGS 84)")
+    if not all(isinstance(z, str) for z in geo["zip"]):
+        problems.append("map ZIPs must be text, never numbers")
     duplicates = int(geo["zip"].duplicated().sum())
     if duplicates:
         problems.append(f"{duplicates} duplicate ZIPs in the geometry")
@@ -705,6 +790,10 @@ def _acs_metadata(
         "dataset_urls": {"detailed": base, "profile": f"{base}/profile"},  # key-free
         "variables": {k: v.as_metadata() for k, v in art.resolved.items()},
         "coverage": coverage,
+        "coverage_basis": {
+            "zctas_with_population": int((art.profile[f"{registry.population}_e"] > 0).sum()),
+            "zctas_total": len(art.profile),
+        },
         "sentinel_counts": art.sentinel_counts,
         "code_cross_check": _code_cross_check(art.profile, registry),
         "zcta_without_state": int(art.profile["state_fips"].isna().sum()),

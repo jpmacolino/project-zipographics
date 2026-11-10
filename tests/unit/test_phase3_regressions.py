@@ -596,7 +596,8 @@ def test_non_finite_numbers_become_null_and_are_counted(bad: str) -> None:
     assert counts == {"estimate:non_finite": 1}
 
 
-def test_non_numeric_text_is_counted_but_blanks_are_not() -> None:
+def test_non_numeric_text_and_blanks_are_counted_separately() -> None:
+    # blanks (JSON null, "", "null", "NaN") are ``:null``; unparseable text is ``:non_numeric``
     est, _, counts = clean_pair(s("12,345", "(X)", None, "", "null", "NaN", 7), s(*[1] * 7))
     assert est.isna().sum() == 6 and est[6] == 7
-    assert counts == {"estimate:non_numeric": 2}
+    assert counts == {"estimate:non_numeric": 2, "estimate:null": 4}

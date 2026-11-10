@@ -139,7 +139,9 @@ def test_share_with_a_missing_numerator_cell_is_incomplete() -> None:
     }
     v = val(make_frame(rows), ["A", "B"], "owner")
     assert v.incomplete
-    assert v.estimate == pytest.approx(600 / 2000)
+    # ZIP B has no numerator, so it leaves the denominator too (Phase 4 QA): 600 / 1,000, not
+    # 600 / 2,000, which would bias every trade-area share low
+    assert v.estimate == pytest.approx(600 / 1000)
 
 
 def test_share_with_an_all_null_numerator_is_unknown_not_zero() -> None:
@@ -318,22 +320,17 @@ def test_per_capita_income_skips_a_zip_without_a_rate_in_both_numerator_and_base
     assert v.incomplete
 
 
-def test_vehicles_per_household_is_aggregate_vehicles_over_households() -> None:
-    # 130 vehicles ±10 over 100 occupied units ±5: 1.30; MOE = sqrt(10^2 + 1.3^2 * 5^2) / 100
-    #   = sqrt(100 + 42.25) / 100 = 0.11927
-    cells = {"B25046_001": (130, 10), "B25044_001": (100, 5)}
+def test_vehicles_per_household_counts_five_or_more_as_five() -> None:
+    # owner cells: 1 vehicle 40, 2 vehicles 30, 3 vehicles 10 (each ±10); 100 households ±5
+    # (40*1 + 30*2 + 10*3) / 100 = 1.30; numerator MOE = sqrt(10^2 * 2 * (1+4+9+16+25)) = 104.881
+    # (every weighted cell contributes, including the zero ones);
+    # MOE = sqrt(104.881^2 + 1.3^2 * 5^2) / 100
+    cells = {f"B25044_{n:03d}": (0.0, 10.0) for n in (4, 5, 6, 7, 8, 11, 12, 13, 14, 15)}
+    cells.update({"B25044_004": (40, 10), "B25044_005": (30, 10), "B25044_006": (10, 10)})
+    cells["B25044_001"] = (100, 5)
     v = val(make_frame({"A": cells}), ["A"], "veh_per_hh")
     assert v.estimate == pytest.approx(1.3)
-    assert v.moe == pytest.approx(0.119269, abs=1e-5)
-
-
-def test_vehicles_per_household_combines_zips_by_summing_vehicles_and_units() -> None:
-    rows = {
-        "A": {"B25046_001": (130, 10), "B25044_001": (100, 5)},
-        "B": {"B25046_001": (300, 20), "B25044_001": (200, 9)},
-    }
-    v = val(make_frame(rows), ["A", "B"], "veh_per_hh")
-    assert v.estimate == pytest.approx(430 / 300)  # not the mean of 1.3 and 1.5
+    assert v.moe == pytest.approx(1.05082, abs=1e-5)
 
 
 # ------------------------------------------------------------------------------- bad input

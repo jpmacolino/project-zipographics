@@ -289,11 +289,15 @@ def test_a_core_kpi_variable_under_95_percent_coverage_fails(tmp_path: Path) -> 
     assert any("B11001_001" in x and "95" in x for x in problems)
 
 
-def test_non_core_variables_may_have_gaps(tmp_path: Path) -> None:
+def test_non_core_variables_may_have_gaps_down_to_the_variable_floor(tmp_path: Path) -> None:
+    # Phase 4 QA: this once allowed a wholly null non-core variable; it now needs 50 % coverage
     p, b, resolved = happy(tmp_path)
-    p.loc[:, "DP03_UNINS_e"] = np.nan  # not a core KPI variable
+    p.loc[["33602", "33603", "59001"], "DP03_UNINS_e"] = np.nan  # 3 of 6 = 50 %, not a core KPI
     problems, _ = validate_artifacts(p, b, resolved, REGISTRY, min_rows=5)
     assert problems == []
+    p.loc[:, "DP03_UNINS_e"] = np.nan
+    problems, _ = validate_artifacts(p, b, resolved, REGISTRY, min_rows=5)
+    assert any("DP03_UNINS" in x for x in problems)
 
 
 def test_geometry_zips_must_be_a_subset_of_the_profile(tmp_path: Path) -> None:

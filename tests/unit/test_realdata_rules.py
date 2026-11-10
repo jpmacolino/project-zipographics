@@ -123,6 +123,8 @@ def test_the_gap_is_recorded_in_the_metadata_and_the_build_passes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(config, "COUNTY_GAP_LIMIT", 0.5)
+    # only Connecticut may have the gap (Phase 4 QA); FL stands in for it in the synthetic data
+    monkeypatch.setattr(config, "COUNTY_GAP_STATES", ("FL",))
     session = FileSession(tmp_path)
     session.files[DEFAULT_SOURCES.county_rel_url] = relationship_with({"33603": "12999"})
     run_build(tmp_path, session)

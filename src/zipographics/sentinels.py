@@ -53,6 +53,7 @@ def _numeric(values: pd.Series, column: str, counts: Counter[str]) -> pd.Series:
     coerced = pd.to_numeric(text.replace("", None), errors="coerce").astype("float64")
     blank = text.isna() | text.astype(str).str.strip().str.lower().isin(_BLANKS)
     counts[f"{column}:non_numeric"] += int((coerced.isna() & ~blank).sum())
+    counts[f"{column}:null"] += int(blank.sum())
     nonfinite = np.isinf(coerced)
     counts[f"{column}:non_finite"] += int(nonfinite.sum())
     return coerced.mask(nonfinite, np.nan)
@@ -70,7 +71,8 @@ def _check_unknown(num: pd.Series, column: str) -> None:
 def clean_pair(estimate: pd.Series, moe: pd.Series) -> tuple[pd.Series, pd.Series, dict[str, int]]:
     """Return (estimate, moe, sentinel counts) as float64 with sentinels replaced.
 
-    Counts are keyed ``"estimate:<value>"`` / ``"moe:<value>"`` for ``metadata.json``.
+    Counts are keyed ``"estimate:<value>"`` / ``"moe:<value>"`` for ``metadata.json``; blank cells
+    (JSON null) are ``"<column>:null"`` and unparseable text ``"<column>:non_numeric"``.
     """
     counts: Counter[str] = Counter()
     est = _numeric(estimate, "estimate", counts)

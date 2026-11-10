@@ -80,6 +80,22 @@ EXPECTED: dict[str, tuple[str, str | None]] = {
     **{
         k: ("share", "proxy_other")
         for k in [
+            "units_2_4",
+            "units_5_19",
+            "units_20p",
+            "units_other",
+            "movers_2",
+            "movers_3",
+            "movers_4",
+            "movers_older",
+            "veh_1",
+            "veh_2",
+            "veh_3p",
+        ]
+    },  # chart categories added in Phase 4 (DECISIONS B17)
+    **{
+        k: ("share", "proxy_other")
+        for k in [
             "commute_drive_alone",
             "commute_carpool",
             "commute_transit",
@@ -120,7 +136,7 @@ def test_the_registry_has_exactly_the_appendix_c_metrics() -> None:
     ids = [x.id for x in m.REGISTRY]
     assert len(ids) == len(set(ids)), "duplicate metric id"
     assert set(ids) == set(EXPECTED)
-    assert len(ids) == 74  # counted from the Appendix C table
+    assert len(ids) == 85  # the 74 of Appendix C plus 11 chart categories (B17)
 
 
 def test_kinds_and_tags_match_appendices_b_and_c() -> None:
@@ -222,7 +238,6 @@ def test_tables_in_use_match_spec_4_2() -> None:
         "B25035",
         "B25038",
         "B25044",
-        "B25046",
         "B25063",
         "B25064",
         "B25075",
@@ -380,17 +395,6 @@ def test_race_shares_partition_the_population() -> None:
         assert spec.den == ("B02001_001",)
         cells += spec.num
     assert sorted(cells) == [f"B02001_{n:03d}" for n in range(2, 9)]
-
-
-def test_vehicles_per_household_uses_the_aggregate_vehicles_table() -> None:
-    # B25046 (aggregate vehicles) is at ZCTA level (Phase 4 check), so SPEC §6.5 prefers it
-    # to counting B25044's "5 or more" as 5: the result is exact, not an "at least"
-    spec = m.BY_ID["veh_per_hh"].spec
-    assert isinstance(spec, m.RatioSpec)
-    assert spec.num == (("B25046_001", 1.0),)
-    assert spec.den == ("B25044_001",)
-    assert "aggregate" in m.BY_ID["veh_per_hh"].help.lower()
-    assert "B25044_004" not in m.VARIABLES and "B25044_011" not in m.VARIABLES  # no longer needed
 
 
 def test_mean_incomes() -> None:

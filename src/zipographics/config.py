@@ -46,6 +46,13 @@ MEDIAN_COVERAGE_FLOOR = 0.90
 #: At most this share of ZCTAs may have a primary county with no ACS county row. In 2020-2024 that
 #: is Connecticut only (the ACS uses planning regions; the 2020 relationship file uses counties).
 COUNTY_GAP_LIMIT = 0.02
+#: Only these states may have such a gap; any other ZCTA without a county benchmark fails the build.
+COUNTY_GAP_STATES = ("CT",)
+#: Every registry variable must be non-null for at least this share of ZCTAs with population > 0
+#: (core KPI variables and published medians have their own floors).
+VARIABLE_COVERAGE_FLOOR = 0.5
+#: Tables that must agree: at most this share of ZCTAs may disagree on a total two tables share.
+TOTAL_DISAGREE_LIMIT = 0.005
 #: The boundary file also holds island-area ZCTAs (VI, GU, MP, AS) that have no ACS data; at most
 #: this many polygons without a profile row are dropped, more means the wrong file (DECISIONS B16).
 MAX_GEOMETRY_EXTRA = 25

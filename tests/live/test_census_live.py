@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from zipographics import config, metrics
@@ -72,19 +73,26 @@ def test_states_include_puerto_rico_only_in_the_state_level_not_the_nation(
 
 
 def _zcta_share_non_null(client: CensusClient, var: str) -> tuple[int, float]:
+    """Rows and the share holding a real number (not null, not an annotation value)."""
     frame = client.fetch_table(
         "detailed", config.DEFAULT_VINTAGE, "zcta", [VarRequest(var, with_moe=False)]
     )
-    values = frame[f"{var}E"].astype(str)
-    usable = ~values.isin(["None", "nan", "-666666666", "-999999999", "-888888888"])
+    values = pd.to_numeric(frame[f"{var}E"], errors="coerce")
+    usable = values.notna() & (values > -100_000_000)  # every ACS annotation value is below this
     return len(frame), float(usable.mean())
 
 
-def test_b25046_aggregate_vehicles_is_available_at_zcta_level(client: CensusClient) -> None:
-    # SPEC §4.2 prefers B25046 (aggregate vehicles) when present at ZCTA level (Phase 4 check)
+def test_b25046_aggregate_vehicles_exists_at_zcta_level_but_is_incomplete(
+    client: CensusClient,
+) -> None:
+    # Measured on 2020-2024: ~86 % of ZCTAs have a value (an earlier version of this helper
+    # miscounted nulls and said 97 %). That is too sparse to be the vehicles-per-household source
+    # (DECISIONS B17); the registry uses B25044 instead. Recorded here so a vintage that fills the
+    # table in is noticed.
     rows, share = _zcta_share_non_null(client, "B25046_001")
     print(f"B25046_001 at ZCTA level: {rows} rows, {share:.1%} non-null")
-    assert rows > 30_000 and share > 0.9
+    assert rows > 30_000
+    assert 0.5 < share < 0.95
 
 
 def test_b02001_race_is_available_at_zcta_level(client: CensusClient) -> None:

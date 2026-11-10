@@ -270,3 +270,16 @@ clean "could not be read as CSV" message.
 - Blocking: zero recognized ZIPs, or more than 1,000 *valid* ZIPs (counted before the data
   lookup), each with its own message; both can apply.
 - Measured: parse + review of 1,000 ZIPs that are all repaired takes 0.10 s (budget 0.5 s).
+
+**B11 (2026-11-09). Phase 1 QA follow-ups.**
+- All recognized ZIPs having population 0 blocks the review (SPEC §5.4 listed only "zero
+  recognized" and ">1,000"): Phase 2 would otherwise divide by zero or show an empty dashboard.
+  A mix of zero-population and populated ZIPs continues; unknown (null) population does not block.
+- Header-less CSVs are detected when no header cell looks like a ZIP column name and some row-1 cell
+  is a valid ZIP token. Such files get column names `Column 1`, `Column 2`, ... and row 1 stays data.
+  A file whose every cell (≥ 80 %) is a ZIP token is read as a plain list, whatever the layout.
+- Single-column cells are split on the paste separators, so `02108 02109` on one line is two ZIPs.
+- Tokens longer than 40 characters (after trimming outer quotes and whitespace) are invalid without
+  running the cleanup loop; no valid token is that long.
+- Two repaired ZIPs in different states flag each other (spec-literal). Unknown population counts as
+  0 when choosing the dominant state.

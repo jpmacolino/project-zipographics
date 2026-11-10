@@ -42,8 +42,19 @@ class UnknownSentinelError(ValueError):
     """A large negative value that is not a documented ACS annotation value."""
 
 
-def _numeric(values: pd.Series) -> pd.Series:
-    return pd.to_numeric(values.replace("", None), errors="coerce").astype("float64")
+_BLANKS = frozenset({"", "null", "none", "nan"})
+
+
+def _numeric(values: pd.Series, column: str, counts: Counter[str]) -> pd.Series:
+    """Parse to float64. Blanks are plain nulls; unparseable text and infinities become nulls too
+    but are counted (``<column>:non_numeric`` / ``:non_finite``) so the build can report them."""
+    text = values.astype(object)
+    coerced = pd.to_numeric(text.replace("", None), errors="coerce").astype("float64")
+    blank = text.isna() | text.astype(str).str.strip().str.lower().isin(_BLANKS)
+    counts[f"{column}:non_numeric"] += int((coerced.isna() & ~blank).sum())
+    nonfinite = np.isinf(coerced)
+    counts[f"{column}:non_finite"] += int(nonfinite.sum())
+    return coerced.mask(nonfinite, np.nan)
 
 
 def _check_unknown(num: pd.Series, column: str) -> None:
@@ -60,12 +71,11 @@ def clean_pair(estimate: pd.Series, moe: pd.Series) -> tuple[pd.Series, pd.Serie
 
     Counts are keyed ``"estimate:<value>"`` / ``"moe:<value>"`` for ``metadata.json``.
     """
-    est = _numeric(estimate)
-    err = _numeric(moe)
+    counts: Counter[str] = Counter()
+    est = _numeric(estimate, "estimate", counts)
+    err = _numeric(moe, "moe", counts)
     _check_unknown(est, "estimate")
     _check_unknown(err, "moe")
-
-    counts: Counter[str] = Counter()
     for column, series in (("estimate", est), ("moe", err)):
         found = series[series.isin(ALL_SENTINELS)].value_counts()
         for value, n in zip(found.index.tolist(), found.tolist(), strict=True):
@@ -74,7 +84,7 @@ def clean_pair(estimate: pd.Series, moe: pd.Series) -> tuple[pd.Series, pd.Serie
     est = est.mask(est.isin(ALL_SENTINELS), np.nan)
     err = err.mask(err.isin(_MOE_NULL), np.nan).mask(err == _MOE_ZERO, 0.0)
     err = err.mask(est.isna(), np.nan)  # a null estimate never carries a MOE
-    return est, err, dict(counts)
+    return est, err, {k: v for k, v in counts.items() if v}
 
 
 def median_code(annotation: pd.Series) -> pd.Series:

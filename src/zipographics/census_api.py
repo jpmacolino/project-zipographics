@@ -59,6 +59,13 @@ _UNREACHABLE_MESSAGE = (
     "or server problem, not a problem with your key. Try again later."
 )
 
+_RETRYABLE = (
+    requests.Timeout,
+    requests.ConnectionError,
+    requests.exceptions.ChunkedEncodingError,
+    requests.exceptions.ContentDecodingError,
+)
+
 Dataset = Literal["detailed", "profile"]
 Level = Literal["zcta", "state", "county", "us"]
 
@@ -234,8 +241,14 @@ class CensusClient:
         sha = hashlib.sha256(url.encode("utf-8")).hexdigest()
         path = cache_dir / f"{sha}.json"
         if path.exists() and not self._refresh:
-            logger.info("cache hit for %s", url)
-            return path.read_text(encoding="utf-8")
+            cached = path.read_text(encoding="utf-8")
+            try:
+                json.loads(cached)
+            except ValueError:
+                logger.info("cached file for %s is corrupt; fetching it again", url)
+            else:
+                logger.info("cache hit for %s", url)
+                return cached
         text = self._request(url, with_key=with_key, expect=expect)
         cache_dir.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".part")
@@ -244,6 +257,11 @@ class CensusClient:
         meta = {"url": url, "fetched_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")}
         path.with_name(f"{sha}.meta.json").write_text(json.dumps(meta), encoding="utf-8")
         return text
+
+    def _snippet(self, body: str) -> str:
+        """The first 200 characters of a body, redacted *before* truncating so a key cut in
+        half at the boundary cannot survive as a prefix."""
+        return self._clean(body)[:200]
 
     def _pace(self) -> None:
         if self._last is not None:
@@ -264,8 +282,10 @@ class CensusClient:
             try:
                 response = self._session.get(full, timeout=TIMEOUT)
             except requests.RequestException as exc:
-                retryable = isinstance(exc, requests.Timeout | requests.ConnectionError)
+                retryable = isinstance(exc, _RETRYABLE)
                 failure = (self._clean(f"{type(exc).__name__}: {exc}"), retryable)
+            except Exception as exc:
+                failure = (self._clean(f"{type(exc).__name__}: {exc}"), False)
             if failure is not None:
                 if not failure[1]:
                     raise NetworkError(
@@ -296,16 +316,26 @@ class CensusClient:
                 not_json = True
             else:
                 not_json = False
-            if not_json:  # an HTML error page: how the API answers an invalid or unactivated key
+            if not_json:
+                stripped = body.strip()
+                if not stripped or stripped.startswith(("[", "{")):
+                    return "retry", "incomplete response"  # a cut connection, not a bad key
+                # an HTML error page: how the API answers an invalid or unactivated key
                 raise RejectedKeyError(REJECTED_KEY_MESSAGE)
             if expect == "object":
                 if not isinstance(parsed, dict) or not isinstance(parsed.get("variables"), dict):
-                    raise CensusApiError(self._clean(f"Unexpected metadata response: {body[:200]}"))
+                    raise CensusApiError(
+                        self._clean(f"Unexpected metadata response: {self._snippet(body)}")
+                    )
                 return "ok", body
             if isinstance(parsed, dict) or not isinstance(parsed, list) or not parsed:
-                raise CensusApiError(self._clean(f"Unexpected Census API response: {body[:200]}"))
+                raise CensusApiError(
+                    self._clean(f"Unexpected Census API response: {self._snippet(body)}")
+                )
             if not isinstance(parsed[0], list):
-                raise CensusApiError(self._clean(f"Unexpected Census API response: {body[:200]}"))
+                raise CensusApiError(
+                    self._clean(f"Unexpected Census API response: {self._snippet(body)}")
+                )
             return "ok", body
         if status in (403, 407):  # a proxy or network policy, not the key (DECISIONS V13)
             raise NetworkError(_BLOCKED_MESSAGE.format(status=status))
@@ -313,4 +343,6 @@ class CensusClient:
             return "retry", f"HTTP {status}"
         if status in (400, 401) and "key" in body.lower():
             raise RejectedKeyError(REJECTED_KEY_MESSAGE)
-        raise CensusApiError(self._clean(f"The Census API returned HTTP {status}: {body[:200]}"))
+        raise CensusApiError(
+            self._clean(f"The Census API returned HTTP {status}: {self._snippet(body)}")
+        )

@@ -2,6 +2,9 @@
 
     uv run pytest -m network
 
+Do not add ``-l`` / ``--showlocals``: a failing test would print the client's local variables,
+which include the request URL with the key.
+
 They need the free API key for the data calls: the key is read from the environment (or the
 repository's ``.env`` through python-dotenv, exactly as ``scripts/build_data.py`` does). A missing
 key skips the keyed tests; nothing here prints the key.

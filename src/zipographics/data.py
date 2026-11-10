@@ -70,11 +70,11 @@ def load(data_dir: Path | None = None, *, registry: _HasVariables | None = None)
     if present and valid, ``zcta_geo.parquet``. Raises :class:`DataNotBuiltError` otherwise."""
     folder = Path(data_dir) if data_dir is not None else config.data_dir()
     variables = _variables(registry)
-    var_columns: list[str] = []
-    for key, var in variables.items():
-        var_columns += [f"{key}_e", f"{key}_m"]
-        if var.is_median:
-            var_columns.append(f"{key}_code")
+    estimate_columns = [c for key in variables for c in (f"{key}_e", f"{key}_m")]
+    var_columns = [
+        *estimate_columns,
+        *(f"{key}_code" for key, var in variables.items() if var.is_median),
+    ]
 
     profile = _read(folder / "zcta_profile.parquet")
     _check_columns(profile, ["zip", *_PROFILE_ATTRIBUTES, *var_columns], "zcta_profile.parquet")
@@ -83,9 +83,7 @@ def load(data_dir: Path | None = None, *, registry: _HasVariables | None = None)
     profile = profile.set_index("zip")
 
     benchmarks = _read(folder / "benchmarks.parquet")
-    _check_columns(
-        benchmarks, [*_BENCHMARK_COLUMNS, *var_columns[: 2 * len(variables)]], "benchmarks.parquet"
-    )
+    _check_columns(benchmarks, [*_BENCHMARK_COLUMNS, *estimate_columns], "benchmarks.parquet")
 
     meta_path = folder / "metadata.json"
     if not meta_path.exists():

@@ -39,8 +39,15 @@ def redact(text: str, secrets: Iterable[str | None] = ()) -> str:
         if isinstance(secret, str) and secret.strip():
             forms |= _forms(secret.strip())
     for form in sorted(forms, key=len, reverse=True):  # longest first: encoded forms contain parts
-        out = out.replace(form, MASK)
+        out = re.sub(re.escape(form), MASK, out, flags=re.IGNORECASE)  # an upper-cased echo too
     return out
+
+
+_STANDARD_ATTRS = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__dict__) | {
+    "message",
+    "asctime",
+    "taskName",
+}
 
 
 class RedactingFilter(logging.Filter):
@@ -68,6 +75,9 @@ class RedactingFilter(logging.Filter):
             record.exc_text = redact(record.exc_text, self._secrets)
         if record.stack_info:
             record.stack_info = redact(record.stack_info, self._secrets)
+        for name, value in list(vars(record).items()):  # extra= fields
+            if name not in _STANDARD_ATTRS and isinstance(value, str):
+                setattr(record, name, redact(value, self._secrets))
         return True
 
 
@@ -89,6 +99,15 @@ def install_redaction(secrets: Iterable[str | None] = ()) -> RedactingFilter:
         return record
 
     logging.setLogRecordFactory(factory)
+    # ``extra=`` fields are attached after the factory runs, so scrub again once makeRecord is done
+    original_make_record = logging.Logger.makeRecord
+
+    def make_record(self: logging.Logger, *args: Any, **kwargs: Any) -> logging.LogRecord:
+        record = original_make_record(self, *args, **kwargs)
+        flt.filter(record)
+        return record
+
+    logging.Logger.makeRecord = make_record  # type: ignore[method-assign]
     attached: list[logging.Handler] = []
     for name in ("", "urllib3", "requests"):
         for handler in logging.getLogger(name).handlers:
@@ -98,7 +117,13 @@ def install_redaction(secrets: Iterable[str | None] = ()) -> RedactingFilter:
     old_level = urllib3_logger.level
     if old_level == logging.NOTSET or old_level < logging.WARNING:
         urllib3_logger.setLevel(logging.WARNING)
-    _installed.update(filter=flt, previous=previous, handlers=attached, urllib3_level=old_level)
+    _installed.update(
+        filter=flt,
+        previous=previous,
+        make_record=original_make_record,
+        handlers=attached,
+        urllib3_level=old_level,
+    )
     return flt
 
 
@@ -107,6 +132,7 @@ def uninstall_redaction() -> None:
     if not _installed:
         return
     logging.setLogRecordFactory(_installed["previous"])
+    logging.Logger.makeRecord = _installed["make_record"]  # type: ignore[method-assign]
     for handler in _installed["handlers"]:
         handler.removeFilter(_installed["filter"])
     logging.getLogger("urllib3").setLevel(_installed["urllib3_level"])

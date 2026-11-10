@@ -461,6 +461,15 @@ declares 74 metrics (Appendix C) over about 270 Census variables.
   reader), the GeoNames format, the real `variables.json` labels (the `network` tests resolve the
   registry against the live file), the annotation strings the API returns for top/bottom codes, and
   whether the 5-year notes page lists the same six sentinel values.
+- **QA follow-ups (B15).** Publishing is two-phase: every artifact is written to a `.tmp` sibling first and
+  all are renamed only when every write succeeded, `metadata.json` last, so a failed build leaves the
+  previous build intact. A 200 response is a rejected key only if it is non-JSON text that does not start
+  with `[` or `{` (an HTML page); a truncated body is retried. The map must cover at least 95 % of the
+  profile's ZIPs with no duplicates or null geometries. Non-finite and unparseable numbers become nulls and
+  are counted in `sentinel_counts` as `non_finite` / `non_numeric`. The CLI rejects a non-finite or negative
+  `--tolerance`, a vintage before 2009, and a `--data-dir` that is a file (exit 2); `Ctrl-C` exits 130.
+  The key-bearing `.env` may be saved as UTF-8 only (a clear message for UTF-16); a blank
+  `CENSUS_API_KEY` variable counts as unset. Run network tests without `-l`/`--showlocals`.
 - **Hypothesis sweeps.** Running the numeric property tests with 40 more seeds exposed scalar/vectorized
   disagreements at absurd magnitudes (QA_REPORT #15); the rule going forward is that both
   implementations return "unknown" for non-finite intermediates and for an index above 1e9.

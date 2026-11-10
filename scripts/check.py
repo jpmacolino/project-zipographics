@@ -22,13 +22,18 @@ MAX_FILE_BYTES = 1_000_000  # SPEC: "no data files over 1 MB"
 SIZE_EXEMPT = frozenset({"uv.lock"})
 
 # A tracked .env file (other than the committed, blank example) is always a failure.
-_ENV_NAME = re.compile(r"(^|/)\.env(\..+)?$")
+_ENV_NAME = re.compile(r"(^|/)(\.env[^/]*|[^/]*\.env|\.envrc)$", re.IGNORECASE)
 _ENV_ALLOWED = frozenset({".env.example"})
 # Census API keys are 40 hex characters. Flag a non-empty key assignment or a key= query value.
 _SECRET_PATTERNS = (
-    re.compile(r"CENSUS_API_KEY\s*[=:]\s*['\"]?[0-9A-Za-z]{8,}"),
-    re.compile(r"[?&]key=[0-9a-fA-F]{40}\b"),
+    re.compile(r"CENSUS_API_KEY\s*[=:]\s*['\"]?[0-9A-Za-z]{8,}", re.IGNORECASE),
+    re.compile(r"\bkey(?:=|%3d)[0-9a-f]{32,}", re.IGNORECASE),
+    re.compile(r"(?:api|census)[_-]?key['\"]?\s*[:=]\s*['\"]?[0-9a-f]{32,}", re.IGNORECASE),
 )
+# A bare 40-hex literal in source folders is a key (or looks like one). The made-up key used by
+# the tests lives under tests/, which is not scanned for this pattern.
+_BARE_KEY = re.compile(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])", re.IGNORECASE)
+_BARE_KEY_DIRS = ("src/", "scripts/", "app/")
 
 GATES: list[tuple[str, list[str]]] = [
     ("ruff lint", ["ruff", "check", "."]),
@@ -74,7 +79,9 @@ def secret_findings(root: Path) -> list[str]:
         except (UnicodeDecodeError, OSError):
             continue  # binary or unreadable: not a text secret
         for lineno, line in enumerate(text.splitlines(), start=1):
-            if any(p.search(line) for p in _SECRET_PATTERNS):
+            if any(p.search(line) for p in _SECRET_PATTERNS) or (
+                rel.startswith(_BARE_KEY_DIRS) and _BARE_KEY.search(line)
+            ):
                 findings.append(f"{rel}:{lineno}: looks like a Census API key (value not shown)")
     return findings
 

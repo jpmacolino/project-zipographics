@@ -284,8 +284,8 @@ def download_file(
         raise BuildError(f"network error downloading {url}: {failure}. Check your connection.", 4)
     if response.status_code != 200:
         raise BuildError(
-            f"{url} returned HTTP {response.status_code}. The data source may have moved: find the "
-            "current official location, update the build and note it in docs/DECISIONS.md.",
+            f"{url} returned HTTP {response.status_code}. The data source may have moved; please "
+            "report this so the build can be updated.",
             4,
         )
     part = dest.with_name(dest.name + ".part")
@@ -538,12 +538,7 @@ def validate_artifacts(
         problems.append(f"column {pop_col} is missing, so coverage cannot be checked")
 
     if geo is not None:
-        extra = sorted(set(geo["zip"]) - set(zips))
-        if extra:
-            problems.append(f"geometry has ZIPs with no profile row: {', '.join(extra[:5])}")
-        empty = int(geo.geometry.isna().sum() + geo.geometry.is_empty.sum())
-        if empty:
-            problems.append(f"{empty} null or empty geometries")
+        problems += geometry_problems(geo, set(zips))
     return problems, coverage
 
 
@@ -569,15 +564,6 @@ def _code_cross_check(profile: pd.DataFrame, registry: Registry) -> dict[str, An
 class BuildResult:
     paths: dict[str, Path]
     metadata: dict[str, Any] = field(default_factory=dict)
-
-
-def _write_atomic(path: Path, writer: Callable[[Path], None]) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    try:
-        writer(tmp)
-        tmp.replace(path)
-    finally:
-        tmp.unlink(missing_ok=True)
 
 
 def _geometry(
@@ -619,28 +605,57 @@ def _geometry(
     return gdf, info, records
 
 
-def _write_parquet(frame: pd.DataFrame, path: Path) -> None:
+def _parquet_writer(frame: pd.DataFrame) -> Callable[[Path], None]:
     def write(tmp: Path) -> None:
         frame.to_parquet(tmp, compression="zstd")
 
-    _write_atomic(path, write)
+    return write
 
 
-def _write_text(text: str, path: Path) -> None:
+def _text_writer(text: str) -> Callable[[Path], None]:
     def write(tmp: Path) -> None:
         tmp.write_text(text, encoding="utf-8")
 
-    _write_atomic(path, write)
+    return write
 
 
-def _geometry_problems(geo: gpd.GeoDataFrame, profile_zips: set[str]) -> list[str]:
+def _publish(items: Sequence[tuple[Path, Callable[[Path], None]]]) -> None:
+    """Write every file to a ``.tmp`` sibling first and rename them all only when every write
+    succeeded (metadata last), so a failure part-way leaves the previous build untouched."""
+    staged = [(path, path.with_name(path.name + ".tmp"), writer) for path, writer in items]
+    try:
+        for _, tmp, writer in staged:
+            writer(tmp)
+        for path, tmp, _ in staged:
+            tmp.replace(path)
+    finally:
+        for _, tmp, _ in staged:
+            tmp.unlink(missing_ok=True)
+
+
+#: The map must cover at least this share of the profile's ZIPs (a truncated map is a bad build).
+GEO_COVERAGE_FLOOR = 0.95
+
+
+def geometry_problems(geo: gpd.GeoDataFrame, profile_zips: set[str] | None) -> list[str]:
+    """Checks on the map: no duplicate or null geometries; with a profile, ZIPs ⊆ profile and
+    near-complete coverage of it."""
     problems: list[str] = []
-    extra = sorted(set(geo["zip"]) - profile_zips)
-    if extra:
-        problems.append(f"geometry has ZIPs with no profile row: {', '.join(extra[:5])}")
+    duplicates = int(geo["zip"].duplicated().sum())
+    if duplicates:
+        problems.append(f"{duplicates} duplicate ZIPs in the geometry")
     empty = int(geo.geometry.isna().sum() + geo.geometry.is_empty.sum())
     if empty:
         problems.append(f"{empty} null or empty geometries")
+    if profile_zips is not None:
+        have = set(geo["zip"])
+        extra = sorted(have - profile_zips)
+        if extra:
+            problems.append(f"geometry has ZIPs with no profile row: {', '.join(extra[:5])}")
+        if profile_zips:
+            share = len(have & profile_zips) / len(profile_zips)
+            if share < GEO_COVERAGE_FLOOR:
+                problems.append(f"geometry covers only {share:.0%} of the profile's ZIPs")
     return problems
 
 
@@ -716,9 +731,13 @@ def build(
         problems, coverage = validate_artifacts(
             art.profile, art.benchmarks, art.resolved, registry, geo=geo, min_rows=min_rows
         )
-    elif geo is not None and profile_path.exists():
-        zips = set(pd.read_parquet(profile_path, columns=["zip"])["zip"])
-        problems = _geometry_problems(geo, zips)
+    elif geo is not None:
+        zips = (
+            set(pd.read_parquet(profile_path, columns=["zip"])["zip"])
+            if profile_path.exists()
+            else None
+        )
+        problems = geometry_problems(geo, zips)
     if problems:
         raise BuildError(
             "output validation failed: " + "; ".join(problems) + ". Nothing was written. "
@@ -737,29 +756,45 @@ def build(
     counts: dict[str, int] = dict(existing.get("row_counts", {}))
     records: dict[str, dict[str, Any]] = {r["name"]: r for r in existing.get("sources", [])}
     paths: dict[str, Path] = {}
+    items: list[tuple[Path, Callable[[Path], None]]] = []
 
     if art is not None:
         metadata.update(_acs_metadata(art, vintage, registry, coverage))
-        _write_parquet(art.profile.reset_index(), profile_path)
-        _write_parquet(art.benchmarks, data_dir / "benchmarks.parquet")
+        items.append((profile_path, _parquet_writer(art.profile.reset_index())))
+        items.append((data_dir / "benchmarks.parquet", _parquet_writer(art.benchmarks)))
         paths.update(profile=profile_path, benchmarks=data_dir / "benchmarks.parquet")
         counts.update(zcta_profile=len(art.profile), benchmarks=len(art.benchmarks))
         records.update({r["name"]: r for r in art.sources})
     if geo is not None and do_geo:
         metadata["geometry"] = geo_info
-        _write_parquet(geo, geo_path)
+        items.append((geo_path, _parquet_writer(geo)))
         paths["geometry"] = geo_path
         counts["geometry"] = len(geo)
         records.update({r["name"]: r for r in geo_records})
     metadata["row_counts"] = counts
     metadata["sources"] = list(records.values())
-    _write_text(json.dumps(metadata, indent=2), meta_path)
+    items.append((meta_path, _text_writer(json.dumps(metadata, indent=2))))  # metadata last
+    _publish(items)
     paths["metadata"] = meta_path
     logger.info("wrote %s", ", ".join(p.name for p in paths.values()))
     return BuildResult(paths, metadata)
 
 
 # ----------------------------------------------------------------------------- command line
+def _tolerance(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value) or value < 0:
+        raise argparse.ArgumentTypeError("must be a finite number of degrees, 0 or more")
+    return value
+
+
+def _vintage(text: str) -> int:
+    value = int(text)
+    if not 2009 <= value <= 2100:  # the first ACS 5-year release covers 2005-2009
+        raise argparse.ArgumentTypeError("must be a year from 2009 on")
+    return value
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="build_data.py",
@@ -767,12 +802,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--refresh", action="store_true", help="ignore cached downloads")
     parser.add_argument(
-        "--vintage", type=int, default=config.DEFAULT_VINTAGE, help="ACS 5-year vintage"
+        "--vintage", type=_vintage, default=config.DEFAULT_VINTAGE, help="ACS 5-year vintage"
     )
     parser.add_argument("--only", choices=("acs", "geo", "all"), default="all")
     parser.add_argument("--no-geo", action="store_true", help="skip the map geometry")
     parser.add_argument(
-        "--tolerance", type=float, default=DEFAULT_TOLERANCE, help="map simplification, degrees"
+        "--tolerance",
+        type=_tolerance,
+        default=DEFAULT_TOLERANCE,
+        help="map simplification, degrees",
     )
     parser.add_argument(
         "--data-dir", type=Path, default=None, help="output folder (default: data/)"
@@ -803,8 +841,16 @@ def main(
         print("usage error: --no-geo contradicts --only geo", file=sys.stderr)
         return 2
     env = os.environ if environ is None else environ
-    key = (env.get("CENSUS_API_KEY") or "").strip()
+    key = str(env.get("CENSUS_API_KEY") or "").strip()
     secrets = [key] if key else []
+
+    if (
+        args.data_dir is not None
+        and Path(args.data_dir).exists()
+        and not Path(args.data_dir).is_dir()
+    ):
+        print(f"usage error: --data-dir {args.data_dir} is a file, not a folder", file=sys.stderr)
+        return 2
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter("%(message)s"))
@@ -849,6 +895,9 @@ def main(
     except BuildError as exc:
         print(redact(str(exc), secrets), file=sys.stderr)
         return exc.exit_code
+    except KeyboardInterrupt:
+        print("Interrupted. Nothing partial was published; re-run to continue.", file=sys.stderr)
+        return 130
     except Exception as exc:
         print(redact(f"Unexpected error ({type(exc).__name__}): {exc}", secrets), file=sys.stderr)
         return 1

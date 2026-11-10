@@ -1,12 +1,12 @@
 # Zipographics: Specification
 
-**Status:** Draft for review · **Version:** 0.9 · **Date:** 2026-11-09
+**Status:** Approved for build · **Version:** 1.0 · **Date:** 2026-11-09
 **Owner:** FloridaMenConsulting · **License:** MIT (public GitHub repo)
 **Companion app:** Zipcator (`project-zipcator`), whose spec this one mirrors.
 
-> Items marked **[REVIEW]** are decisions the owner should confirm before the build starts.
-> They are collected in §13. Facts checked against official sources during scoping are logged
-> in `docs/DECISIONS.md` as V1-V13; design decisions as D1-D7.
+> The owner reviewed the draft on 2026-11-09 and approved it with one change: race (B02001)
+> is in v1; §13 records the review outcome. Facts checked against official sources during
+> scoping are logged in `docs/DECISIONS.md` as V1-V13; design decisions as D1-D7.
 
 ## 1. Summary
 
@@ -47,9 +47,9 @@ using protected characteristics when the marketing is for housing, jobs, credit 
   ZCTA and no ACS data; documented limitation).
 - Business counts (ZIP Codes Business Patterns): phase 2 (§12).
 - Any runtime Census API call, user accounts, saved projects, or a hosted multi-user service.
-- Race, disability and veteran-status data (D5) **[REVIEW]**.
+- Disability and veteran-status data (D5).
 - Trend comparisons across ACS vintages.
-- Native PDF output (the summary report is printable HTML; §5.6, D3) **[REVIEW]**.
+- Native PDF output (the summary report is printable HTML; §5.6, D3).
 - Legal compliance determinations. The restricted-use feature is a guardrail, not legal advice
   (§5.7).
 
@@ -86,7 +86,7 @@ Nothing under `data/` is committed except `data/README.md`.
 | D3 | **Census 2020 ZCTA cartographic boundary file**, 1:500k (`cb_2020_us_zcta520_500k.zip` under `https://www2.census.gov/geo/tiger/GENZ2020/shp/`) | Map polygons (simplified) | Public domain | Yes, unless D3-alt is configured |
 | D3-alt | Zipcator's built `data/zcta.parquet`, located by env var `ZIPOGRAPHICS_ZIPCATOR_PARQUET` | Reuse Zipcator's simplified polygons and skip the D3 download (D6) | (derived from D3) | Optional |
 | D4 | **Census 2020 ZCTA-to-county relationship file** (`tab20_zcta520_county20_natl.txt` under `https://www2.census.gov/geo/docs/maps-data/data/rel2020/zcta520/`) | State and primary county per ZCTA (county with the largest land overlap); county options for the benchmark | Public domain | Yes |
-| D5 | **GeoNames US postal codes** (`https://download.geonames.org/export/zip/US.zip`) | City name per ZIP in the table and exports | CC BY 4.0, attribution in README, app footer and exports | Yes (city may be blank) **[REVIEW]** |
+| D5 | **GeoNames postal codes**: `https://download.geonames.org/export/zip/US.zip` plus `PR.zip` (US.zip has no Puerto Rico entries; Zipcator's build fetches both) | City name per ZIP in the table and exports | CC BY 4.0, attribution in README, app footer and exports | Yes (city may be blank) |
 | D6 | ZIP Codes Business Patterns (County Business Patterns API) | Establishment counts for B2B views | Public domain | **Phase 2 only** (§12) |
 
 **Verify before relying on them.** URLs and file names are believed correct (D3, D4 and D5 are
@@ -115,7 +115,7 @@ B25034, B01001) are read in label order from `variables.json`, with bracket boun
 labels and checked against an expected-bounds table in code.
 
 Candidate tables were confirmed present in the 2024 dataset (V5). The v1 list, with the reason
-for each; the exact metrics are in Appendix C **[REVIEW]**:
+for each; the exact metrics are in Appendix C:
 
 | Table | What | Why it's in v1 |
 |---|---|---|
@@ -144,10 +144,11 @@ for each; the exact metrics are in Appendix C **[REVIEW]**:
 | B15003 | Educational attainment, 25+ | HS+, bachelor's+, graduate (Schools, Higher ed) |
 | C16001 | Language spoken at home (Spanish; English ability) | "Spanish-language households" preset; limited-English share |
 | B03003 | Hispanic or Latino origin | Context for the Spanish-language lens |
+| B02001 | Race (one race alone, by group; two or more races) | Added at the owner's review: race composition as context in every lens (D5 amended). Tagged `race_color`; no preset or lens criterion uses it. Not in the scoping availability check (V5): confirm at ZCTA level in Phase 4 |
 | B28002 | Internet subscriptions | Broadband share (channel planning for every vertical) |
 | DP03 | Health insurance coverage (resolved by label) | Medical lens (% uninsured) |
 
-**Not in v1** (D5) **[REVIEW]:** B02001 race, B18101 disability, B21001 veteran status, B09001
+**Not in v1** (D5): B18101 disability, B21001 veteran status, B09001
 (B01001 covers the needed child ages), B11003/B27010/C27006/B08006 (covered by the rows above).
 
 ### 4.3 Processed artifacts
@@ -267,7 +268,7 @@ The app is a four-step flow held in `st.session_state`: **1 Industry → 2 ZIPs 
 - Step-1 answers can be changed only by going back to Step 1; the insights screen can switch the
   lens but never the restricted status.
 
-**Verticals (refined from the brief) [REVIEW]**
+**Verticals (refined from the brief)**
 
 | Vertical | Restricted | Default lens (Appendix D) | Notes |
 |---|---|---|---|
@@ -332,7 +333,7 @@ count, optional per-ZIP overlap %, source type).
   most of a state (Florida has about 1,000 ZCTAs); profile math is trivial at that size; the map's
   GeoJSON is the binding constraint and stays within the 3 s render budget at 1,000 simplified
   polygons (§7, benchmarked). Above the limit the review screen blocks with "Zipographics handles
-  up to 1,000 ZIPs at a time. Split the list and run it in parts." **[REVIEW]**
+  up to 1,000 ZIPs at a time. Split the list and run it in parts."
 - ZIPs are `str` everywhere. The parser never calls `int()` on a ZIP except inside a
   digits-only check, and never lets pandas infer dtypes.
 
@@ -473,15 +474,16 @@ first, and which presets are offered. Restricted mode allows only the Context le
 - Top/bottom-coded medians compare as bounds (§6.2): "$250,000+" satisfies `≥ 200,000` but is
   "uncertain" for `≤ 300,000` and doesn't qualify.
 - **Presets** (Appendix D) are one-click bundles that fill the rule list; the user can then edit
-  the rules. Each lens offers 2-4 presets. Thresholds are starting points in a data table
-  **[REVIEW]**.
+  the rules. Each lens offers 2-4 presets. Thresholds are starting points in a data table.
 - Qualifying ZIPs are highlighted in the table and on the map; a summary line says "7 of 15 ZIPs
   match (households: 12,400 of 31,900)".
 
 **Charts** (trade area vs benchmark, side by side, as shares; Altair, which ships with
 Streamlit): always income distribution (7 bands), age breakdown (8 bands), owner vs renter,
-housing age (4 bands); plus 1-2 lens charts (Appendix D). Keep it to about six charts. Chart data
-comes from `zipographics.charts` (tested); rendering is thin.
+housing age (4 bands); plus 1-2 lens charts (Appendix D). Keep it to about six charts. A "More
+demographics" expander in every lens adds a race and Hispanic-origin chart (context; its help text
+says Hispanic origin is a separate Census question and Hispanic people can be of any race). Chart
+data comes from `zipographics.charts` (tested); rendering is thin.
 
 **Map** (folium via `streamlit-folium`): choropleth of the selected metric over the recognized
 ZIP polygons (sequential palette, quantile or equal-interval breaks, legend with units);
@@ -497,7 +499,7 @@ missing, an explanatory placeholder.
    Census data; a checkbox drops them). With filters, the qualifying ZIPs, with a checkbox to
    export all instead. **No footer in the ZIP list itself** (it must paste and upload cleanly);
    the attestation block is displayed directly above the copy box and recorded in the CSV and
-   report **[REVIEW: deviation from "every export footer"]**.
+   report.
 2. **CSV** (two variants, as in Zipcator): *CSV* (plain; ZIPs as quoted text, RFC 4180, UTF-8)
    and *CSV for Excel* (UTF-8 BOM, ZIP cells as `="02108"` so Excel keeps the zeros; both tested).
    Rows: one per recognized ZIP, then one `Trade area` row and one benchmark row (in a `Row type`
@@ -515,7 +517,6 @@ missing, an explanatory placeholder.
    clean PDF (page breaks between sections, no interactive elements). No external requests,
    scripts or fonts. Why HTML: opens anywhere, prints to PDF from any browser, no Windows-hostile
    PDF toolchain (WeasyPrint needs GTK; Kaleido needs headless Chrome), easy to test by parsing.
-   **[REVIEW]**
 4. **Footer / attestation** (CSV footer, report footer, and the block above the ZIP list),
    generated by one function (`export.attestation(...)`) so all exports agree:
    project name; industry (vertical); the restricted-use question and the answer given ("Yes",
@@ -579,7 +580,7 @@ military status, and genetic information; plus income as a proxy (the brief's li
 metrics are tagged in the registry and are never offered as preset or lens criteria in restricted
 mode.
 
-**Stricter than the list (D4) [REVIEW]:** in restricted mode, ranking, filtering and selection
+**Stricter than the list (D4):** in restricted mode, ranking, filtering and selection
 are blocked for **every** metric, not just tagged ones, because at ZIP level nearly every ACS
 measure (tenure, home value, rent, education, vehicles, commuting, internet) correlates with race,
 national origin or familial status, and selecting areas by such measures is the pattern regulators
@@ -677,7 +678,7 @@ present at ZCTA level, else from B25044 counting "5 or more" as 5 (labeled "at l
 **unreliable** CV > 30 %, or MOE not computable, or estimate null. An estimate of exactly 0 is
 "use with caution" (CV undefined) and displays as `0 (± MOE)`. For shares, the CV is that of the
 share. Census publishes no numeric thresholds (V9); these are a judgment call, recorded in
-DECISIONS.md, and live in `config.py` **[REVIEW]**. **Small-population flag:** population < 1,000
+DECISIONS.md, and live in `config.py`. **Small-population flag:** population < 1,000
 or households < 300.
 
 ### 6.7 Overlap-weighted (in-radius) estimates
@@ -847,7 +848,7 @@ Zipcator.
   unreliable matches marked and optionally excluded; bound semantics for coded medians; each
   preset produces the documented rules.
 - The protected/proxy tag list matches Appendix B exactly (a test fails if a metric is added
-  without a tag decision).
+  without a tag decision); no preset or lens KPI references a `race_color` metric.
 
 **exports**
 - ZIP lists (comma, newline), order, not-found inclusion checkbox, empty input.
@@ -991,7 +992,7 @@ Each phase ends with all gates green, `/qa-review <N>`, triage, commits, and `gi
 | 1 | `zips`, `importer`, Zipcator contract fixtures (generated with Zipcator's real exporter), `review` on synthetic data (TDD) | §9.2 zips/importer tests green |
 | 2 | `stats`, sentinel transforms, `metrics` registry, `profile` (aggregation, weighting, benchmark, index) on synthetic data (TDD); formulas quoted from official docs in DECISIONS | §9.2 stats/profile tests green |
 | 3 | `redact`, `census_api`, `data_build` on recorded fixtures with fake keys (TDD); missing-key and error messages; build CLI | §9.2 redaction/build tests green. **STOP: ask the owner to paste the Census API key into `.env` and confirm.** Never check for the key by reading `.env`. |
-| 4 | Real data build; verify the 5-year annotation page, labels, coverage, top-code cross-check, B25046 availability, 33601 status; run `network` tests once; DECISIONS updated | Artifacts built and validated; `data` smoke tests green. **STOP: report coverage gaps, final metric list, and any official-source conflicts for the owner's OK.** |
+| 4 | Real data build; verify the 5-year annotation page, labels, coverage, top-code cross-check, B25046 and B02001 availability at ZCTA level, 33601 status; run `network` tests once; DECISIONS updated | Artifacts built and validated; `data` smoke tests green. **STOP: report coverage gaps, final metric list, and any official-source conflicts for the owner's OK.** |
 | 5 | `verticals`, `restricted`, `lenses`/presets, `filters` (policy-enforced), `export` (ZIP lists, CSV, attestation), `report`, `cli` (TDD) | §9.2 restricted/filters/exports tests green; CLI end to end on real data |
 | 6 | Streamlit app (4 steps), charts, map; AppTest suite; visual QA | AppTest green; screenshots reviewed. **STOP: owner tries the app and reviews screenshots and a sample report.** |
 | 7 | Golden scenarios, benchmarks, README, full QA review, polish | §10 all met. **STOP: final report to the owner.** |
@@ -1011,18 +1012,18 @@ Each phase ends with all gates green, `/qa-review <N>`, triage, commits, and `gi
 - Spanish-language UI; hosted internal deployment with SSO.
 - Trend views across non-overlapping 5-year vintages.
 
-## 13. Open questions for review
-1. **Vertical list** (§5.1): two added (Solar & home energy; Moving & storage); restricted flags as
-   in the brief, now cross-checked with Google/Meta categories (V10). Confirm.
-2. **Restricted characteristic list** (Appendix B) and **D4** (restricted mode blocks selection
-   by every metric, not only tagged ones). Confirm, and confirm counsel review before wide use.
-3. **Variable list** (§4.2, Appendix C), including leaving out race, disability and veteran
-   status (D5), and GeoNames city names (CC BY attribution).
-4. **Summary report format:** self-contained printable HTML (D3), PDF via the browser.
-5. **ZIP-list export without a footer** (§5.6 item 1), with the attestation shown beside it and
-   recorded in the CSV and report.
-6. **Maximum 1,000 ZIPs** (D1), **CV thresholds 15/30** and **small-population thresholds**
-   (D2), and **preset thresholds** (Appendix D).
+## 13. Review outcome (2026-11-09)
+The owner reviewed the draft and approved:
+1. the vertical list (§5.1), including the two added verticals;
+2. the restricted characteristic list (Appendix B) and D4 (restricted mode blocks selection by
+   every metric), with counsel review still required before wide internal use (§5.7);
+3. the variable list (§4.2, Appendix C) **with one change: race (B02001) is added**, as context
+   tagged `race_color` (D5 amended); disability and veteran status stay out; GeoNames city names
+   stay in;
+4. the self-contained printable HTML summary report (D3);
+5. the ZIP-list export without a footer, with the attestation beside it and in the CSV and report;
+6. the 1,000-ZIP maximum (D1), CV thresholds 15/30 and small-population thresholds (D2), and the
+   preset thresholds (Appendix D).
 
 ## Appendix A: glossary
 - **ZCTA:** ZIP Code Tabulation Area (§3.1). **ACS:** American Community Survey.
@@ -1031,7 +1032,7 @@ Each phase ends with all gates green, `/qa-review <N>`, triage, commits, and `gi
 - **Trade area:** the set of recognized input ZIPs (overlap-weighted when from Zipcator).
 - **Restricted mode:** §5.7.
 
-## Appendix B: protected and proxy characteristics (restricted tags) [REVIEW]
+## Appendix B: protected and proxy characteristics (restricted tags)
 
 The union across the Fair Housing Act, the Equal Credit Opportunity Act, Title VII / ADEA / ADA /
 GINA / USERRA (employment), and state unfair-discrimination rules for insurance, plus the brief's
@@ -1040,7 +1041,7 @@ regardless.
 
 | Tag | Covers | Zipographics metrics tagged |
 |---|---|---|
-| `race_color` | race, color | (none in v1, D5) |
+| `race_color` | race, color | race shares (B02001) |
 | `national_origin` | national origin, ancestry, Hispanic origin, language spoken at home | Hispanic share, Spanish-at-home share, limited-English share |
 | `religion` | religion | (none) |
 | `sex` | sex, gender identity, sexual orientation | (none; B01001 is summed over sex) |
@@ -1055,7 +1056,7 @@ regardless.
 | `proxy_other` | measures that track the above at ZIP level | tenure, home value, rent, education, vehicles, commute, internet, new movers, housing age, units in structure |
 | (untagged) | totals | population, households, housing units, vacancy |
 
-## Appendix C: v1 metrics [REVIEW]
+## Appendix C: v1 metrics
 
 Kinds: C count, S share, M median, A mean/ratio. Universe in parentheses.
 
@@ -1091,10 +1092,11 @@ Kinds: C count, S share, M median, A mean/ratio. Universe in parentheses.
 | `hs_plus`, `ba_plus`, `grad` | Education (pop 25+) | S | B15003 | proxy_other |
 | `spanish_home`, `limited_english` | Spanish at home; speaks English less than "very well" (pop 5+) | S | C16001 | national_origin |
 | `hispanic` | Hispanic or Latino (pop) | S | B03003 | national_origin |
+| `race_white`, `race_black`, `race_aian`, `race_asian`, `race_nhpi`, `race_other`, `race_two_plus` | One race alone (White; Black or African American; American Indian and Alaska Native; Asian; Native Hawaiian and Other Pacific Islander; Some other race) and two or more races (pop). Shares sum to 100 %; Hispanic origin is separate | S | B02001 | race_color |
 | `broadband`, `no_internet` | Broadband of any type; no internet (hh) | S | B28002 | proxy_other |
 | `uninsured` | No health insurance (civilian noninstitutionalized pop) | S | DP03 (by label) | proxy_other |
 
-## Appendix D: lenses and presets [REVIEW]
+## Appendix D: lenses and presets
 
 Every lens starts with the five core KPI cards (§5.5) and the four core charts. Presets are
 starting points; the user edits rules after applying one. Thresholds live in `lenses.py`.
@@ -1134,3 +1136,6 @@ starting points; the user edits rules after applying one. Thresholds live in `le
 | Seniors | 65+ index ≥ 120 |
 | Commuters | drive alone ≥ 75 %; commute 30+ min index ≥ 110 |
 | Spanish-language households | Spanish at home ≥ 25 % (offered in Retail, Restaurants, Health, General) |
+
+No preset or lens KPI uses a race metric (a unit test enforces it). Race metrics appear as table
+columns (via the column picker), in the "More demographics" chart, and in exports.

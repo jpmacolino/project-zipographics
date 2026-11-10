@@ -162,11 +162,15 @@ exclusion). The explicit protected/proxy list (SPEC Appendix B) is still documen
 because it drives which metrics are hidden from *presets and lenses* and labeled in the UI.
 Flagged for the user's and counsel's review.
 
-**D5. Race (B02001) is not in v1, nor are disability (B18101) and veteran status (B21001).** No
-lens or preset uses them, each is a protected characteristic in at least one restricted context,
-and leaving them out shrinks the misuse surface. Hispanic origin (B03003) and language at home
-(C16001) stay, because the brief's "Spanish-language households" preset needs them (they are
-restricted characteristics). Flagged for review.
+**D5 (amended at owner review, 2026-11-09). Race (B02001) is in v1; disability (B18101) and
+veteran status (B21001) are not.** The draft left race out; the owner added it. Race shares
+(one race alone by group, and two or more races) are shown as context in every lens (table
+columns via the column picker, a "More demographics" chart, exports), tagged `race_color`, and
+**no preset or lens KPI uses them** (unit-tested). In restricted mode they are blocked from
+selection like every other metric (D4). Disability and veteran status stay out: no lens uses
+them and each is protected in at least one restricted context. Hispanic origin (B03003) and
+language at home (C16001) stay, for the "Spanish-language households" preset. B02001 was not in
+the scoping availability check (V5); Phase 4 confirms it at ZCTA level.
 
 **D6. ZCTA geometry: Zipographics builds its own** simplified 2020 ZCTA cartographic boundary
 layer by default (independence from Zipcator). Optionally, `ZIPOGRAPHICS_ZIPCATOR_PARQUET` points
@@ -177,5 +181,12 @@ schema (`zip` text, EPSG:4326 geometry) and falls back with a message if it does
 `core.filemode=false`, `core.symlinks=false`, `core.ignorecase=true` were set to match what
 Windows git uses (and what Zipcator's repo has). No commit was made; git identity is unset in
 that shell and is the user's to set.
+
+### Owner review of the draft spec (2026-11-09)
+Approved as drafted, with one change: race (B02001) added (D5 amended). Confirmed: the vertical
+list including the two added verticals; the restricted characteristic list and D4; GeoNames city
+names; the HTML summary report (D3); no footer in the ZIP-list export; D1 and D2 thresholds; preset
+thresholds. Counsel review of the vertical mapping and restricted list is still required before
+wide internal use.
 
 ## Made during build

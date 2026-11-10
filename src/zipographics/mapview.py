@@ -105,7 +105,7 @@ def classify(a: Analysis, zips: Sequence[str], metric_id: str, bins: int = 5) ->
     return Classification(tuple(float(e) for e in edges), tuple(out), _shades(k), labels)
 
 
-def _tooltip(a: Analysis, z: str, metric_ids: Sequence[str]) -> str:
+def _tooltip(a: Analysis, z: str, metric_ids: Sequence[str], shaded: str | None = None) -> str:
     facts = a.row_facts(z)
     place = ", ".join(x for x in (facts["city"], facts["county"], facts["state"]) if x)
     lines = [f"<b>{html.escape(z)}</b> {html.escape(place)}"]
@@ -119,6 +119,12 @@ def _tooltip(a: Analysis, z: str, metric_ids: Sequence[str]) -> str:
             " (Unreliable \N{DAGGER})" if v.tier == "unreliable" and v.estimate is not None else ""
         )
         lines.append(f"{html.escape(m.name)}: {text}{extra}{flag}")
+        if (
+            mid == shaded and m.indexable
+        ):  # the shaded metric also gets its index (not in restricted)
+            idx = a.zip_index(mid)[a.zips.index(z)]
+            if idx.value is not None:
+                lines.append(f"Index {idx.value} vs {html.escape(a.benchmark.name)}")
     return "<br>".join(lines)
 
 
@@ -172,7 +178,7 @@ def layer(
             "fillColor": fill, "color": outline, "weight": weight,
             "dashArray": dash, "fillOpacity": _FILL_OPACITY,
         }  # fmt: skip
-        props["tooltip"] = _tooltip(a, z, shown)
+        props["tooltip"] = _tooltip(a, z, shown, None if locked else metric)
         features.append({"type": "Feature", "geometry": mapping(geom), "properties": props})
     minx, miny, maxx, maxy = (float(x) for x in sub.total_bounds)
     legend = tuple(LegendItem(lb, cls.shades[j]) for j, lb in enumerate(cls.labels)) if cls else ()

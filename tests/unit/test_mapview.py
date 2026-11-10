@@ -238,3 +238,18 @@ def test_the_lightest_choropleth_class_is_distinct_from_the_neutral_fill() -> No
     assert layer is not None
     light = min(i.color for i in layer.legend)
     assert abs(_luminance(light) - _luminance(mapview.NEUTRAL)) > 15
+
+
+def test_the_tooltip_of_the_shaded_metric_has_its_index_and_reliability() -> None:
+    layer = mapview.layer(run(), "owner", None, GEO)
+    assert layer is not None
+    good = features(layer)["33602"]["properties"]["tooltip"]
+    assert "Index 61 vs Florida" in good
+    bad = features(layer)["33603"]["properties"]["tooltip"]
+    assert "Unreliable" in bad and "Index" in bad
+
+
+def test_a_restricted_tooltip_has_no_index() -> None:
+    layer = mapview.layer(run(FORCED), None, None, GEO)
+    assert layer is not None
+    assert "Index" not in features(layer)["33602"]["properties"]["tooltip"]

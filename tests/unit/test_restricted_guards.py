@@ -179,3 +179,11 @@ def test_an_unrestricted_analysis_still_works() -> None:
     a = ANALYSES["off"]
     assert filters.apply(a, [Rule("owner", ">=", 0.5)]).qualifying
     assert table.order(a, "owner")[0] == "33602"
+
+
+def test_a_policy_whose_answer_says_yes_is_restricted_even_if_its_flag_is_not() -> None:
+    assert restricted.is_restricted(UsePolicy(False, "Retail (general & specialty)", "Yes"))
+    assert restricted.is_restricted(
+        UsePolicy(False, "Retail (general & specialty)", "Yes (set by industry)")
+    )
+    assert not restricted.is_restricted(UsePolicy(False, "Retail (general & specialty)", "No"))

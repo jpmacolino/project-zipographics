@@ -94,20 +94,52 @@ def secret_findings(root: Path) -> list[str]:
 
 
 _SUBPROCESS_CALLS = frozenset({"run", "Popen", "check_output", "check_call", "call"})
+_ALWAYS_LOCALE = frozenset({"getoutput", "getstatusoutput"})  # text mode, no encoding parameter
 
 
 def _kwarg_names(call: ast.Call) -> set[str | None]:
     return {k.arg for k in call.keywords}
 
 
-def _is_true(call: ast.Call, name: str) -> bool:
-    return any(
-        k.arg == name and isinstance(k.value, ast.Constant) and k.value.value is True
-        for k in call.keywords
-    )
+def _text_mode(call: ast.Call) -> bool:
+    """True when ``text=`` / ``universal_newlines=`` is on or cannot be told (a variable)."""
+    for k in call.keywords:
+        if k.arg in ("text", "universal_newlines"):
+            return not (isinstance(k.value, ast.Constant) and k.value.value is False)
+    return False
 
 
-def _encoding_issue(call: ast.Call) -> str | None:
+def _aliases(tree: ast.AST) -> tuple[set[str], set[str]]:
+    """Names bound to the subprocess module, and to subprocess functions, in this file."""
+    modules, funcs = {"subprocess"}, set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules |= {a.asname or a.name for a in node.names if a.name == "subprocess"}
+        elif isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+            funcs |= {a.asname or a.name for a in node.names}
+    return modules, funcs
+
+
+def _open_issue(call: ast.Call, name: str) -> str | None:
+    kw, n = _kwarg_names(call), len(call.args)
+    mode: ast.expr | None = call.args[1] if n > 1 else None
+    for k in call.keywords:
+        if k.arg == "mode":
+            mode = k.value
+    binary = isinstance(mode, ast.Constant) and isinstance(mode.value, str) and "b" in mode.value
+    return None if binary or "encoding" in kw else f"{name}() without encoding"
+
+
+def _subprocess_issue(call: ast.Call, name: str) -> str | None:
+    kw = _kwarg_names(call)
+    if "encoding" in kw:
+        return None
+    if _text_mode(call) or None in kw:  # None is **kwargs: text mode cannot be ruled out
+        return f"subprocess.{name}() in text mode without encoding"
+    return None
+
+
+def _encoding_issue(call: ast.Call, modules: set[str], funcs: set[str]) -> str | None:
     """What is wrong with this call, if it reads or writes text without naming an encoding."""
     func, kw, n = call.func, _kwarg_names(call), len(call.args)
     if isinstance(func, ast.Attribute):
@@ -117,26 +149,29 @@ def _encoding_issue(call: ast.Call) -> str | None:
             return "write_text() without encoding"
         if func.attr == "TextIOWrapper" and "encoding" not in kw and n < 2:
             return "TextIOWrapper() without encoding"
-        is_subprocess = isinstance(func.value, ast.Name) and func.value.id == "subprocess"
-        text_mode = _is_true(call, "text") or _is_true(call, "universal_newlines")
-        if is_subprocess and func.attr in _SUBPROCESS_CALLS and text_mode and "encoding" not in kw:
-            return f"subprocess.{func.attr}(text=True) without encoding"
-    elif isinstance(func, ast.Name) and func.id == "open":
-        mode: ast.expr | None = call.args[1] if n > 1 else None
-        for k in call.keywords:
-            if k.arg == "mode":
-                mode = k.value
-        binary = (
-            isinstance(mode, ast.Constant) and isinstance(mode.value, str) and "b" in mode.value
-        )
-        if not binary and "encoding" not in kw:
-            return "open() without encoding"
+        owner = func.value.id if isinstance(func.value, ast.Name) else None
+        if owner == "io" and func.attr == "open":
+            return _open_issue(call, "io.open")
+        if owner in modules:
+            if func.attr in _ALWAYS_LOCALE:
+                return f"subprocess.{func.attr}() uses the locale encoding"
+            if func.attr in _SUBPROCESS_CALLS:
+                return _subprocess_issue(call, func.attr)
+    elif isinstance(func, ast.Name):
+        if func.id == "open":
+            return _open_issue(call, "open")
+        if func.id in funcs:
+            if func.id in _ALWAYS_LOCALE:
+                return f"subprocess.{func.id}() uses the locale encoding"
+            if func.id in _SUBPROCESS_CALLS:
+                return _subprocess_issue(call, func.id)
     return None
 
 
 def encoding_problems(files: Iterable[Path], root: Path) -> list[str]:
     """``path:line: what`` for every text read or write that leaves the encoding to the platform
-    default (cp1252 on Windows). Ruff's PLW1514 cannot see ``p.read_text()`` on a variable."""
+    default (cp1252 on Windows). Ruff's PLW1514 cannot see ``p.read_text()`` on a variable, an
+    aliased ``subprocess`` or ``io.open``."""
     found: list[str] = []
     for path in files:
         try:
@@ -144,14 +179,26 @@ def encoding_problems(files: Iterable[Path], root: Path) -> list[str]:
         except (SyntaxError, UnicodeDecodeError, OSError):
             continue
         rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+        modules, funcs = _aliases(tree)
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and (issue := _encoding_issue(node)):
+            if isinstance(node, ast.Call) and (issue := _encoding_issue(node, modules, funcs)):
                 found.append(f"{rel}:{node.lineno}: {issue}")
     return sorted(found)
 
 
+def python_files(root: Path) -> list[str]:
+    """Tracked and untracked (not ignored) ``.py`` files, so a new file is checked before it is
+    ``git add``ed."""
+    others = subprocess.run(
+        ["git", "ls-files", "-z", "--others", "--exclude-standard"],
+        cwd=root, check=True, capture_output=True, text=True, encoding="utf-8",
+    ).stdout  # fmt: skip
+    names = {*tracked_files(root), *(x for x in others.split("\0") if x)}
+    return sorted(n for n in names if n.endswith(".py"))
+
+
 def _encoding_gate() -> int:
-    files = [REPO_ROOT / rel for rel in tracked_files(REPO_ROOT) if rel.endswith(".py")]
+    files = [REPO_ROOT / rel for rel in python_files(REPO_ROOT)]
     found = encoding_problems(files, REPO_ROOT)
     for line in found:
         print(f"  {line}")

@@ -707,3 +707,18 @@ fixed pixel height and collapsed to about 40 px with overlapping bars (now a Ste
 restricted-mode map polygons were invisible (pale grey with white outlines on light street tiles; now a mid-grey
 fill with a dark outline); the Overlap % column showed 96.0737 (now one decimal, "<0.1" for slivers); report chart
 legends covered bar labels (now below the plot); the comma-separated ZIP box was cut off (now wraps).
+
+**P13. Phase 6 QA triage (2026-11-10).** Fixed: stale prepared report (now keyed to the run and cleared on any
+step change), analysis cache key (now includes overlaps), stuck CSV column choice, sortable grey-cells grid in
+restricted mode (static `st.table`), invisible rule units (caption beside the number; the number resets to a
+unit-appropriate default when the metric or basis changes: `flow.default_number`), exports while a filter rule
+is invalid (blocked with a message), attestation shown directly above the ZIP list, comma-separated ZIP list
+download, map tooltip index and reliability for the shaded metric, `is_restricted` also reads a "Yes..." answer,
+duplicate metric ids rejected, encoding gate (aliased `subprocess`, `io.open`, `getoutput`, `**kwargs`, untracked
+files). **Not changed:** the "use with caution" tier in the table is muted text only, as SPEC §5.5 specifies
+(the legend, the header help and the KPI cards' tier text carry the meaning; "unreliable" has the dagger); the
+filter summary "households: X of Y" sums full-ZIP households (the table's basis), not in-radius households;
+`dataclasses.replace(a, policy=...)` can still build an Analysis with a different policy (nothing in the app
+does; `Analysis.restricted` reads strictly and `make_policy` is the only builder); removing an uploaded file
+keeps the previous bytes ("Using the file you added earlier"); the encoding gate cannot follow
+`read = p.read_text; read()`.

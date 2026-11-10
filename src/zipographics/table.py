@@ -88,6 +88,9 @@ def _check_ids(ids: Sequence[str]) -> list[str]:
     unknown = [m for m in ids if m not in metrics.BY_ID]
     if unknown:
         raise ValueError(f"Unknown metric: {unknown[0]!r}")
+    dup = next((m for m in ids if list(ids).count(m) > 1), None)
+    if dup is not None:
+        raise ValueError(f"Metric {dup!r} is listed twice.")
     return list(ids)
 
 

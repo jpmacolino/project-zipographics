@@ -229,3 +229,40 @@ Gates after triage: ruff, format, mypy, size and secrets pass; **1,739 default t
 branch), **56 `data` tests** (47 artifact + 9 real-data CLI). CLI end to end on the real data: Boston (8
 Excel-mangled ZIPs, same result as the correct list), the Tampa set with a restricted vertical, Puerto Rico, a
 1,000-ZIP file with report and CSV.
+
+### Phase 6: the Streamlit app (2026-11-10)
+Built with the owner-requested follow-ups first (displayed-precision filters, one policy on the Analysis, encoding
+gate, whole-path Hypothesis test, `mapview.layer` with library-level restricted enforcement; DECISIONS P10-P12).
+**Visual QA** (Playwright on the real data: golden 1, 2, 5, a filtered run, the report printed to a 5-page PDF;
+screenshots looked at) found five defects the AppTest suite could not see. Then an independent `qa-reviewer`
+(fresh context; scratch scripts, 36 mutants, AppTest probes on real data, socket spy) found two HIGH issues. **What
+held up:** every library restricted guard against every probe (direct `session_state` injection of rules, sort,
+index, only-matching, export-all, map metric, lens had no effect; Back-and-switch runs stayed clean); leading zeros
+through all nine Zipcator fixtures, paste variants, cp1252/UTF-16/BOM files, an empty and a >5 MB file; robustness
+sweeps on real data (single ZIP, zero-population, no-households, Puerto Rico, two states, 1,000 ZIPs, every metric
+as a rule); no network or key (socket spy: loopback only; `dotenv`, `census_api`, `data_build`, `redact` never
+loaded); displayed-precision comparison edge cases; performance (real data: load 1.9 s, 1,000-ZIP analysis 0.21 s,
+map layer 0.14 s, report 0.4-0.6 s, about 1.3 s per widget interaction at 1,000 ZIPs).
+
+| # | severity | finding | handling |
+|---|---|---|---|
+| V1 | (visual) | Altair charts used a fixed pixel height and collapsed to about 40 px, bars overlapping | **Fixed** (bug 42): Step height per category |
+| V2 | (visual) | restricted-mode map polygons invisible (pale grey, white outline, light tiles) | **Fixed** (bug 43): mid-grey fill, dark outline, test on contrast |
+| V3 | (visual) | Overlap % column showed 96.0737 | **Fixed** (bug 44): `ui.fmt_overlap` |
+| V4 | (visual) | report chart legends covered bar labels | **Fixed** (bug 45): below the axes, geometry test |
+| V5 | (visual) | comma-separated ZIP box cut off | **Fixed** (bug 46): wraps |
+| 1 | HIGH | a prepared report stayed downloadable after Back, including after switching to a restricted industry (wrong attestation, filtered content) | **Fixed** (bug 47) |
+| 2 | HIGH | the analysis cache key ignored overlaps: a second Zipcator file with the same ZIPs showed the first file's numbers | **Fixed** (bug 48) |
+| 3 | MEDIUM | stale CSV column choice blocked a new file | **Fixed** (bug 49) |
+| 4 | MEDIUM | "Why are some values grey?" was a sortable per-ZIP grid in restricted mode | **Fixed** (bug 50) |
+| 5 | MEDIUM | filter rule unit hidden; number stayed when the metric changed | **Fixed** (bug 51) |
+| 6 | MEDIUM | mutant survivors: policy in the cache key, exclude-unreliable checkbox | **Fixed**: Back-and-switch tests, exclude-unreliable test; the coded-uncertain mutant is killed by `test_phase5_regressions` |
+| 7 | LOW | attestation hidden in an expander; one ZIP-list download; double analysis per rerun; exports with an invalid rule; map tooltip without index/tier; `is_restricted` ignoring a "Yes" answer; duplicate metric ids; encoding-gate false negatives (bug 52) | **Fixed** (P13) |
+| 7 | LOW | caution tier by muted colour; in-radius filter summary basis; `dataclasses.replace` policy swap; removed upload; alias-read encodings | **Documented, not changed** (P13) |
+
+New bugs 42-52 with regression tests: `test_the_chart_height_is_a_step_per_category_so_it_cannot_collapse`;
+`test_the_neutral_style_is_visible_on_a_street_map`; `test_overlap_percentages_show_one_decimal_at_most`,
+`test_overlaps_in_the_table_are_rounded_for_display`; `test_chart_legends_sit_below_the_plot_not_over_the_bars`;
+`tests/ui/test_app_regressions.py` (prepared-report staleness x3, second Zipcator file, restricted switch x2,
+column choice, no sortable grid, rule unit, exclude-unreliable, attestation placement, both list downloads,
+invalid rule); `test_more_implicit_encodings_are_found` and friends.

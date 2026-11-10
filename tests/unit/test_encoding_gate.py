@@ -80,3 +80,40 @@ def test_the_gate_is_part_of_the_check_script() -> None:
     text = (ROOT / "scripts" / "check.py").read_text(encoding="utf-8")
     assert '"encoding"' in text and "encoding_problems" in text
     assert subprocess.run(["git", "--version"], capture_output=True, check=False).returncode == 0
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "import io\nio.open('x')\n",
+        "from subprocess import run\nrun(['x'], text=True)\n",
+        "import subprocess\nsubprocess.getoutput('x')\n",
+        "import subprocess\nsubprocess.run(['x'], **kw)\n",
+        "import subprocess\nsubprocess.run(['x'], text=flag)\n",
+        "import subprocess as sp\nsp.run(['x'], text=True)\n",
+    ],
+)
+def test_more_implicit_encodings_are_found(tmp_path: Path, code: str) -> None:
+    assert len(problems(tmp_path, code)) == 1, code
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "from subprocess import run\nrun(['x'], text=True, encoding='utf-8')\n",
+        "from subprocess import run\nrun(['x'], text=False)\n",
+        "import subprocess\nsubprocess.run(['x'], **kw, encoding='utf-8')\n",
+        "import io\nio.open('x', 'rb')\n",
+        "import io\nio.open('x', encoding='utf-8')\n",
+    ],
+)
+def test_the_new_checks_have_no_false_positives(tmp_path: Path, code: str) -> None:
+    assert problems(tmp_path, code) == []
+
+
+def test_untracked_python_files_are_scanned_too(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "new.py").write_text("p.read_text()\n", encoding="utf-8")  # never `git add`ed
+    check = load_check()
+    assert "new.py" in check.python_files(tmp_path)
+    assert check.encoding_problems([tmp_path / "new.py"], tmp_path)

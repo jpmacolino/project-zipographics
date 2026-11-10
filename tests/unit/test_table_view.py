@@ -177,3 +177,8 @@ def test_overlaps_in_the_table_are_rounded_for_display() -> None:
     )
     v = table.build_view(an.analyze(ART, parsed, OFF), None, metric_ids=["owner"])
     assert col(v, "Overlap %") == ["96.1", "100"]
+
+
+def test_duplicate_metric_ids_are_rejected_not_a_styler_crash() -> None:
+    with pytest.raises(ValueError, match="twice"):
+        table.build_view(run(), None, metric_ids=["owner", "owner"])

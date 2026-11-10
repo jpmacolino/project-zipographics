@@ -104,6 +104,8 @@ def is_restricted(policy: UsePolicy | None, *others: UsePolicy | None) -> bool:
     for p in (policy, *others):
         if p is None or p.restricted:
             return True
+        if (p.answer or "").startswith("Yes"):  # "Yes" / "Yes (set by industry)" means restricted
+            return True
         vertical = BY_NAME.get(p.vertical or "")
         if vertical is not None and vertical.restricted:
             return True

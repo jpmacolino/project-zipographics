@@ -85,6 +85,8 @@ def validate_facts(facts: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("facts frame index must be string ZIPs (never numbers)")
     if not all(_ZIP.fullmatch(z) for z in facts.index):
         raise ValueError("facts frame index must hold 5-character ZIPs")
+    if facts.index.has_duplicates:
+        raise ValueError("facts frame index has duplicate ZIPs")
     return facts
 
 
@@ -119,6 +121,40 @@ def dominant_of(entries: Iterable[StateEntry], exclude: str | None = None) -> st
     best = max(totals.values())
     # dict preserves first-seen order, so the first state at the maximum is the earliest one
     return next(state for state, total in totals.items() if total == best)
+
+
+class StateTotals:
+    """Per-state population totals that answer "dominant state, ignoring one ZIP" in O(states).
+
+    Same rule as :func:`dominant_of` (which is the slow reference the tests compare against),
+    but built once, so excluding each of n repaired ZIPs costs O(n), not O(n^2).
+    """
+
+    def __init__(self, entries: Iterable[StateEntry]) -> None:
+        self._where: dict[str, tuple[int, str, float]] = {}
+        self._total: dict[str, float] = {}
+        self._positions: dict[str, list[int]] = {}
+        for pos, e in enumerate(entries):
+            self._where[e.zip] = (pos, e.state, e.population)
+            self._total[e.state] = self._total.get(e.state, 0.0) + e.population
+            self._positions.setdefault(e.state, []).append(pos)
+
+    def dominant(self, exclude: str | None = None) -> str | None:
+        hit = self._where.get(exclude) if exclude is not None else None
+        best: str | None = None
+        best_key: tuple[float, int] | None = None
+        for state, positions in self._positions.items():
+            total, first = self._total[state], positions[0]
+            if hit is not None and hit[1] == state:
+                total -= hit[2]
+                if len(positions) == 1:
+                    continue  # that was the state's only ZIP
+                if positions[0] == hit[0]:
+                    first = positions[1]
+            key = (total, -first)  # largest total; ties to the earliest remaining ZIP
+            if best_key is None or key > best_key:
+                best, best_key = state, key
+        return best
 
 
 def dominant_state(

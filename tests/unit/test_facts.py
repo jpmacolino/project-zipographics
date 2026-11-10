@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 from synth_facts import make_facts
+
 from zipographics.facts import STATE_NAMES, dominant_state, validate_facts
 
 
@@ -75,3 +76,28 @@ def test_validate_facts_rejects_a_zip_index_that_is_not_five_digits() -> None:
     facts = make_facts({"2108": ("MA", 1, 1)})
     with pytest.raises(ValueError, match="5-character"):
         validate_facts(facts)
+
+
+# --------------------------------------------------------------------- QA #4: fast exclusion
+def test_state_totals_match_the_brute_force_rule_for_every_exclusion() -> None:
+    from hypothesis import given
+    from hypothesis import strategies as st
+
+    from zipographics.facts import StateEntry, StateTotals, dominant_of
+
+    @given(
+        st.lists(
+            st.tuples(st.sampled_from("ABCD"), st.integers(0, 5)),
+            min_size=0,
+            max_size=12,
+        )
+    )
+    def check(rows: list[tuple[str, int]]) -> None:
+        entries = [StateEntry(f"{i:05d}", s, float(p)) for i, (s, p) in enumerate(rows)]
+        totals = StateTotals(entries)
+        assert totals.dominant() == dominant_of(entries)
+        for e in entries:
+            assert totals.dominant(exclude=e.zip) == dominant_of(entries, exclude=e.zip), e
+        assert totals.dominant(exclude="99999") == dominant_of(entries, exclude="99999")
+
+    check()

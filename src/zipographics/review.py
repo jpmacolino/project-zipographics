@@ -20,11 +20,12 @@ from zipographics.config import (
 )
 from zipographics.facts import (
     STATE_NAMES,
-    dominant_of,
+    StateTotals,
     state_entries,
     validate_facts,
 )
 from zipographics.models import ParsedInput, ReviewSummary, UsePolicy
+from zipographics.zips import clean_token
 
 
 def summarize(
@@ -43,7 +44,10 @@ def summarize(
     no_residents: list[str] = []
     small: list[str] = []
     sub = facts.loc[list(recognized)]
-    for z, pop, hh in zip(sub.index, sub["population"], sub["households"], strict=True):
+    # nullable (Float64/pd.NA) and object columns are coerced to plain float64 with NaN
+    pops = pd.to_numeric(sub["population"], errors="coerce").astype("float64")
+    hhs = pd.to_numeric(sub["households"], errors="coerce").astype("float64")
+    for z, pop, hh in zip(sub.index, pops, hhs, strict=True):
         pop_known, hh_known = not math.isnan(pop), not math.isnan(hh)
         if pop_known and pop == 0:
             no_residents.append(z)
@@ -52,19 +56,25 @@ def summarize(
             small.append(z)
 
     entries = state_entries(recognized, facts)
+    totals = StateTotals(entries)
     state_of = {e.zip: e.state for e in entries}
     unexpected: list[tuple[str, str, str]] = []
     for tok in parsed.repaired:
         z = tok.zip
         if z is None or z not in state_of:
             continue
-        rest = dominant_of(entries, exclude=z)
+        rest = totals.dominant(exclude=z)
         if rest is not None and rest != state_of[z]:
             unexpected.append((z, state_of[z], rest))
 
     blocking: list[str] = []
     if not recognized:
         blocking.append("No ZIPs were recognized. Go back and check the list.")
+    elif len(no_residents) == len(recognized):
+        blocking.append(
+            "None of the recognized ZIPs has a residential population in Census data, "
+            "so there is nothing to profile."
+        )
     if len(parsed.zips) > MAX_ZIPS:
         blocking.append(
             f"Zipographics handles up to {MAX_ZIPS:,} ZIPs at a time. "
@@ -87,7 +97,7 @@ def summarize(
         rejected_rows=parsed.rejected_rows,
         overlap_conflicts=parsed.overlap_conflicts,
         states=tuple(sorted(set(state_of.values()))),
-        benchmark_state=dominant_of(entries),
+        benchmark_state=totals.dominant(),
         blocking=tuple(blocking),
         industry=policy.vertical if policy else None,
         project_name=project_name,
@@ -140,7 +150,7 @@ def review_lines(s: ReviewSummary) -> list[str]:
         )
 
     if s.repaired:
-        pairs = [f"{t.raw.strip()} → {t.zip}" for t in s.repaired]
+        pairs = [f"{clean_token(t.raw)} → {t.zip}" for t in s.repaired]
         lines.append(
             f"{len(s.repaired)} repaired (leading zeros restored: "
             f"{_listing(pairs, SHOWN_REPAIRED)})"

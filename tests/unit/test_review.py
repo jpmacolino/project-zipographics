@@ -311,3 +311,64 @@ def test_zipcator_rejected_rows_and_plural_forms() -> None:
     assert "2 ZIPs have no overlap value and are treated as full ZIPs: 33603, 33604" in text
     assert "1 row rejected for an unusable overlap: 33605 (-5: overlap must be above 0" in text
     assert "2 ZIPs repeat with a different overlap; the first value is used: 33602, 33603" in text
+
+
+# --------------------------------------------------------------------- QA phase 1 regressions
+def test_all_recognized_zips_without_residents_blocks() -> None:
+    # QA #3: a trade area with 0 people and 0 households has nothing to profile
+    s = run("33000")
+    assert not s.can_continue
+    assert any("residential population" in b for b in s.blocking)
+    assert run("33000 33602").can_continue  # one ZIP with residents is enough
+
+
+def test_unknown_population_does_not_block() -> None:
+    assert run("59004").can_continue  # suppressed, not zero
+
+
+def test_nullable_and_object_columns_are_accepted() -> None:
+    # QA #5: the parquet loader may hand over Float64 (pd.NA) or object (None) columns
+    import pandas as pd
+
+    nullable = FACTS.copy()
+    nullable["population"] = nullable["population"].astype("Float64")
+    nullable["households"] = nullable["households"].astype("Float64")
+    assert summarize(parse_paste("59004 59005 33602"), nullable).small_population == ("59005",)
+
+    obj = FACTS.copy()
+    obj["population"] = pd.Series([None if pd.isna(v) else v for v in FACTS["population"]],
+                                  index=FACTS.index, dtype="object")  # fmt: skip
+    obj["households"] = obj["households"].astype("object").where(obj["households"].notna(), None)
+    assert summarize(parse_paste("59004 59005 33602"), obj).small_population == ("59005",)
+
+
+def test_duplicate_zip_index_is_rejected_clearly() -> None:
+    import pandas as pd
+    import pytest
+
+    from zipographics.facts import validate_facts
+
+    dup = pd.concat([FACTS.loc[["33602"]], FACTS.loc[["33602"]]])
+    with pytest.raises(ValueError, match="duplicate"):
+        validate_facts(dup)
+
+
+def test_repaired_line_shows_the_cleaned_raw_token() -> None:
+    # QA #6: quotes and "=" from Excel text cells were printed in the repaired line
+    lines = review_lines(run('"2108" ="2109"'))
+    rep = next(line for line in lines if "repaired" in line)
+    assert rep == "2 repaired (leading zeros restored: 2108 → 02108, 2109 → 02109)"
+
+
+def test_not_found_listing_is_capped_at_twenty() -> None:
+    text = "33602 " + " ".join(f"{90000 + i}" for i in range(25))
+    nf = next(line for line in review_lines(run(text)) if "not found" in line)
+    assert nf.startswith("25 not found")
+    assert "90019" in nf and "90020" not in nf
+    assert "and 5 more" in nf
+
+
+def test_two_repaired_zips_in_different_states_flag_each_other() -> None:
+    # spec-literal and noisy for tiny lists (DECISIONS B10); pinned so a change is deliberate
+    s = run("2108 3360")
+    assert s.repaired_unexpected_state == (("02108", "MA", "NH"), ("03360", "NH", "MA"))

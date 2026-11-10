@@ -42,8 +42,16 @@ TIER_LABELS: dict[Tier, str] = {
     "caution": "Use with caution",
     "unreliable": "Unreliable",
 }
-#: Marker appended to an unreliable value (caution is shown in muted text instead).
-TIER_MARK: dict[Tier, str] = {"good": "", "caution": "", "unreliable": DAGGER}
+TILDE = "~"
+#: Marker appended to a value in a table, tooltip or report: reliability is never conveyed by
+#: colour alone (SPEC 7; DECISIONS P14). A dagger means unreliable, a tilde use with caution.
+TIER_MARK: dict[Tier, str] = {"good": "", "caution": TILDE, "unreliable": DAGGER}
+
+
+def marker_for(tier: Tier, *, known: bool = True, coded: bool = False) -> str:
+    """The marker for a shown value. A coded median ("$250,000+") already says it is a bound, and
+    an unknown value is a dash, so neither gets one."""
+    return TIER_MARK[tier] if known and not coded else ""
 
 
 #: How each unit is displayed: (scale, decimals). A share shows 100x with one decimal ("46.8 %").

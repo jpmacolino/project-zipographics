@@ -18,7 +18,15 @@ from zipographics import metrics, stats
 from zipographics.analysis import Analysis
 from zipographics.filters import FilterResult
 from zipographics.restricted import label_of, require_unrestricted
-from zipographics.ui import DAGGER, DASH, fmt_index, fmt_moe, fmt_number, fmt_overlap, fmt_value
+from zipographics.ui import (
+    DASH,
+    fmt_index,
+    fmt_moe,
+    fmt_number,
+    fmt_overlap,
+    fmt_value,
+    marker_for,
+)
 
 INPUT = "input"
 ZIP = "zip"
@@ -92,6 +100,11 @@ def _check_ids(ids: Sequence[str]) -> list[str]:
     if dup is not None:
         raise ValueError(f"Metric {dup!r} is listed twice.")
     return list(ids)
+
+
+def _mark(tier: stats.Tier, known: bool, coded: bool) -> str:
+    m = marker_for(tier, known=known, coded=coded)
+    return f" {m}" if m else ""
 
 
 def _tier_css(tier: stats.Tier, estimate: float | None) -> str:
@@ -179,14 +192,14 @@ def build_view(
             v = a.value(z, mid)
             if kind == "index":
                 iv = idx_cols[mid][pos[z]]
-                mark = f" {DAGGER}" if iv.tier == "unreliable" and iv.value is not None else ""
+                mark = _mark(iv.tier, iv.value is not None, False)
                 cells.append(fmt_index(iv) + mark)
                 style.append(_tier_css(iv.tier, iv.value))
             elif kind == "moe":
                 cells.append(fmt_moe(m, v))
                 style.append("")
             else:
-                mark = f" {DAGGER}" if v.tier == "unreliable" and v.estimate is not None else ""
+                mark = _mark(v.tier, v.estimate is not None, v.code != "none")
                 cells.append(fmt_value(m, v) + mark)
                 style.append(_tier_css(v.tier, v.estimate))
         match = bool(active and result is not None and result.matches[z].qualifies)

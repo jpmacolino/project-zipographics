@@ -37,7 +37,7 @@ from zipographics import (
 )
 from zipographics import review as review_mod
 from zipographics.models import ParsedInput, Rule, UsePolicy
-from zipographics.ui import DAGGER
+from zipographics.ui import DAGGER, TILDE
 from zipographics.zips import parse_paste
 
 STEPS = ["Industry", "ZIPs", "Review", "Insights"]
@@ -382,8 +382,9 @@ def _table_section(
         }
         st.dataframe(styled, hide_index=True, column_config=config_cols, width="stretch")
     st.caption(
-        f"{DAGGER} marks an unreliable estimate (grey italics); muted text means use with "
-        "caution (a margin of error of 15-30 % of the estimate); \N{EM DASH} means no estimate."
+        f"{DAGGER} marks an unreliable estimate (grey italics); {TILDE} means use with caution "
+        "(a margin of error of 15-30 % of the estimate, shown in muted text); "
+        "\N{EM DASH} means no estimate."
     )
     bad = table.unreliable_cells(a, ids)
     with st.expander("Why are some values grey?"):

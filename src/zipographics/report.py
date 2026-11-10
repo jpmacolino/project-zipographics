@@ -35,10 +35,12 @@ from zipographics.review import review_lines
 from zipographics.ui import (
     DAGGER,
     DASH,
+    TILDE,
     fmt_moe,
     fmt_number,
     fmt_overlap,
     fmt_value,
+    marker_for,
 )
 
 _TRADE = "#1f4e79"
@@ -215,8 +217,9 @@ def _cell(a: Analysis, z: str, mid: str) -> str:
     v = a.value(z, mid)
     text = fmt_value(m, v)
     cls = {"good": "", "caution": ' class="caution"', "unreliable": ' class="unrel"'}[v.tier]
-    if v.tier == "unreliable" and v.estimate is not None:
-        text += f" {DAGGER}"
+    mark = marker_for(v.tier, known=v.estimate is not None, coded=v.code != "none")
+    if mark:
+        text += f" {mark}"
     moe = fmt_moe(m, v)
     title = f' title="{_a(moe)}"' if moe else ""
     return f"<td{cls}{title}>{_e(text)}</td>"
@@ -368,8 +371,8 @@ def render(
         _e(x)
         for x in (
             "Estimates carry a margin of error at the 90 % confidence level; "
-            f"{DAGGER} marks an unreliable estimate (coefficient of variation above 30 %) and "
-            "muted text means use with caution (15-30 %).",
+            f"{DAGGER} marks an unreliable estimate (coefficient of variation above 30 %, shown "
+            f"in grey italics) and {TILDE} means use with caution (15-30 %, shown in muted text).",
             NOTE_MOE,
             NOTE_CODED,
         )

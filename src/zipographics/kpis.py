@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from zipographics import metrics, stats
 from zipographics.analysis import Analysis
 from zipographics.stats import Tier
-from zipographics.ui import DAGGER, DASH, TIER_LABELS, fmt_moe, fmt_value
+from zipographics.ui import DASH, TIER_LABELS, fmt_moe, fmt_value, marker_for
 
 _NOUNS = {"hh": "households", "pop": "population"}
 
@@ -91,7 +91,7 @@ def cards(a: Analysis) -> list[KpiCard]:
                 share_text,
                 tier,
                 TIER_LABELS[tier],
-                DAGGER if tier == "unreliable" else "",
+                marker_for(tier, known=v.estimate is not None, coded=v.code != "none"),
                 tooltip,
             )
         )

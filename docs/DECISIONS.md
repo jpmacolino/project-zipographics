@@ -722,3 +722,17 @@ filter summary "households: X of Y" sums full-ZIP households (the table's basis)
 does; `Analysis.restricted` reads strictly and `make_policy` is the only builder); removing an uploaded file
 keeps the previous bytes ("Using the file you added earlier"); the encoding gate cannot follow
 `read = p.read_text; read()`.
+
+**P14. SPEC §5.5 vs §7: "use with caution" needs a non-colour marker (owner decision, 2026-11-10).** §5.5 says
+caution cells are shown in muted text and unreliable cells in grey italics with a dagger; §7 says reliability is
+never conveyed by colour alone. **§7 wins.** A tilde `~` now marks "use with caution" and the dagger still marks
+"unreliable", in the table (values and index cells), the map tooltips (`(Use with caution ~)`,
+`(Unreliable †)`), the report table and the KPI cards; the legend under the table, the report's data notes and the
+KPI tooltips explain both. A top- or bottom-coded median ("$250,000+", tier caution by §6.2) gets no tilde: its
+text already says it is a bound. An unknown value is an em dash and has no marker. Supersedes the "not changed"
+note about the caution tier in P13. (`ui.TIER_MARK`, `ui.marker_for`.)
+
+**P15. The filter summary follows the In-radius / Full toggle (owner decision, 2026-11-10).** "N of M ZIPs match
+(households: X of Y)" now sums *in-radius* households (full households x overlap, a blank overlap counting as a
+full ZIP) when in-radius estimates are on, and full-ZIP households otherwise, so Y equals the Households KPI card
+in both modes. Supersedes the "filter summary basis" note in P13.

@@ -152,8 +152,12 @@ def apply(
         )
     qualifying = tuple(z for z in a.zips if matches[z].qualifies)
     unreliable = tuple(z for z in a.zips if matches[z].on_unreliable)
+    # the summary follows the In-radius / Full toggle, like the KPI cards (DECISIONS P15)
     households = [
-        float(hh[i]) if hh is not None and hh[i] == hh[i] else 0.0 for i in range(len(a.zips))
+        (a.in_radius(z, "hh") or 0.0)
+        if a.weighted
+        else (float(hh[i]) if hh is not None and hh[i] == hh[i] else 0.0)
+        for i, z in enumerate(a.zips)
     ]
     pos = {z: i for i, z in enumerate(a.zips)}
     return FilterResult(

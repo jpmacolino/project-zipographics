@@ -24,7 +24,7 @@ from zipographics import metrics
 from zipographics.analysis import Analysis
 from zipographics.filters import FilterResult
 from zipographics.restricted import require_unrestricted
-from zipographics.ui import fmt_moe, fmt_number, fmt_value
+from zipographics.ui import TIER_LABELS, fmt_moe, fmt_number, fmt_value, marker_for
 
 NEUTRAL = "#9aa7b4"  # mid grey: still visible on a street map (and on the report's white page)
 #: Sequential blues (ColorBrewer, colorblind-safe), light to dark.
@@ -115,9 +115,8 @@ def _tooltip(a: Analysis, z: str, metric_ids: Sequence[str], shaded: str | None 
         text = html.escape(fmt_value(m, v))
         moe = fmt_moe(m, v)
         extra = f" {html.escape(moe)}" if moe else ""
-        flag = (
-            " (Unreliable \N{DAGGER})" if v.tier == "unreliable" and v.estimate is not None else ""
-        )
+        mark = marker_for(v.tier, known=v.estimate is not None, coded=v.code != "none")
+        flag = f" ({TIER_LABELS[v.tier]} {mark})" if mark else ""
         lines.append(f"{html.escape(m.name)}: {text}{extra}{flag}")
         if (
             mid == shaded and m.indexable

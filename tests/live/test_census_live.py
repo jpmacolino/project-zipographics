@@ -69,3 +69,25 @@ def test_states_include_puerto_rico_only_in_the_state_level_not_the_nation(
         "detailed", config.DEFAULT_VINTAGE, "state", [VarRequest("B01003_001", with_moe=False)]
     )
     assert "72" in set(states["state"]) and len(states) >= 52
+
+
+def _zcta_share_non_null(client: CensusClient, var: str) -> tuple[int, float]:
+    frame = client.fetch_table(
+        "detailed", config.DEFAULT_VINTAGE, "zcta", [VarRequest(var, with_moe=False)]
+    )
+    values = frame[f"{var}E"].astype(str)
+    usable = ~values.isin(["None", "nan", "-666666666", "-999999999", "-888888888"])
+    return len(frame), float(usable.mean())
+
+
+def test_b25046_aggregate_vehicles_is_available_at_zcta_level(client: CensusClient) -> None:
+    # SPEC §4.2 prefers B25046 (aggregate vehicles) when present at ZCTA level (Phase 4 check)
+    rows, share = _zcta_share_non_null(client, "B25046_001")
+    print(f"B25046_001 at ZCTA level: {rows} rows, {share:.1%} non-null")
+    assert rows > 30_000 and share > 0.9
+
+
+def test_b02001_race_is_available_at_zcta_level(client: CensusClient) -> None:
+    rows, share = _zcta_share_non_null(client, "B02001_002")
+    print(f"B02001_002 at ZCTA level: {rows} rows, {share:.1%} non-null")
+    assert rows > 30_000 and share > 0.9

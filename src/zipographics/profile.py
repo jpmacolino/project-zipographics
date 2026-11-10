@@ -327,6 +327,28 @@ def build_profile(
     return TradeAreaProfile(tuple(zips), weights is not None, values)
 
 
+def bracket_median(
+    frame: pd.DataFrame,
+    zips: Sequence[str],
+    metric_id: str,
+    *,
+    weights: Mapping[str, float] | None = None,
+) -> MetricValue:
+    """A median interpolated from summed brackets, even for a single geography.
+
+    ``build_profile`` shows the published median for one ZIP; this ignores it. It exists to measure
+    how far an interpolated median is from the published one (SPEC §6.4) and for callers that need
+    a median where the published value is suppressed.
+    """
+    metric = metrics.BY_ID[metric_id]
+    if not isinstance(metric.spec, metrics.MedianSpec):
+        raise ValueError(f"{metric_id} is not a median")
+    data = _Data(frame, zips, [metric])
+    w = np.array([1.0 if weights is None else weights.get(z, 1.0) for z in zips], dtype=float)
+    nan = np.asarray(np.nan)
+    return _scalar(metric, _interpolated_median(metric.spec, data, w, nan))
+
+
 # ----------------------------------------------------------------------------- public: per ZIP
 @dataclass(frozen=True)
 class ZipColumn:

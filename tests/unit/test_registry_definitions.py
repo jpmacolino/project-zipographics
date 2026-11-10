@@ -117,8 +117,9 @@ SAMPLE_LABELS = {
     "B28002_004": "Estimate!!Total:!!With an Internet subscription:!!Broadband of any type",
     "C16001_003": "Estimate!!Total:!!Spanish:",
     "B03003_003": "Estimate!!Total:!!Hispanic or Latino",
-    "B25044_004": "Estimate!!Total:!!Owner occupied:!!1 vehicle available",
-    "B25044_011": "Estimate!!Total:!!Renter occupied:!!1 vehicle available",
+    "B25044_005": "Estimate!!Total:!!Owner occupied:!!2 vehicles available",
+    "B25044_012": "Estimate!!Total:!!Renter occupied:!!2 vehicles available",
+    "B25046_001": "Estimate!!Aggregate number of vehicles available:",
     "B08301_021": "Estimate!!Total:!!Worked from home",
     "B01003_001": "Estimate!!Total",
 }
@@ -137,7 +138,8 @@ def test_label_patterns_match_a_realistic_acs_label(key: str, label: str) -> Non
         ("B25002_003", "Estimate!!Total:!!Occupied"),
         ("B25003_002", "Estimate!!Total:!!Renter occupied"),
         ("B28002_013", "Estimate!!Total:!!With an Internet subscription:!!Broadband of any type"),
-        ("B25044_004", "Estimate!!Total:!!Renter occupied:!!1 vehicle available"),
+        ("B25044_005", "Estimate!!Total:!!Renter occupied:!!2 vehicles available"),
+        ("B25046_001", "Estimate!!Aggregate number of vehicles available:!!Owner occupied"),
         ("B23025_005", "Estimate!!Total:!!In labor force:!!Civilian labor force:!!Employed"),
     ],
 )

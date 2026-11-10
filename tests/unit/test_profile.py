@@ -318,17 +318,22 @@ def test_per_capita_income_skips_a_zip_without_a_rate_in_both_numerator_and_base
     assert v.incomplete
 
 
-def test_vehicles_per_household_counts_five_or_more_as_five() -> None:
-    # owner cells: 1 vehicle 40, 2 vehicles 30, 3 vehicles 10 (each ±10); 100 households ±5
-    # (40*1 + 30*2 + 10*3) / 100 = 1.30; numerator MOE = sqrt(10^2 * 2 * (1+4+9+16+25)) = 104.881
-    # (every weighted cell contributes, including the zero ones);
-    # MOE = sqrt(104.881^2 + 1.3^2 * 5^2) / 100
-    cells = {f"B25044_{n:03d}": (0.0, 10.0) for n in (4, 5, 6, 7, 8, 11, 12, 13, 14, 15)}
-    cells.update({"B25044_004": (40, 10), "B25044_005": (30, 10), "B25044_006": (10, 10)})
-    cells["B25044_001"] = (100, 5)
+def test_vehicles_per_household_is_aggregate_vehicles_over_households() -> None:
+    # 130 vehicles ±10 over 100 occupied units ±5: 1.30; MOE = sqrt(10^2 + 1.3^2 * 5^2) / 100
+    #   = sqrt(100 + 42.25) / 100 = 0.11927
+    cells = {"B25046_001": (130, 10), "B25044_001": (100, 5)}
     v = val(make_frame({"A": cells}), ["A"], "veh_per_hh")
     assert v.estimate == pytest.approx(1.3)
-    assert v.moe == pytest.approx(1.05082, abs=1e-5)
+    assert v.moe == pytest.approx(0.119269, abs=1e-5)
+
+
+def test_vehicles_per_household_combines_zips_by_summing_vehicles_and_units() -> None:
+    rows = {
+        "A": {"B25046_001": (130, 10), "B25044_001": (100, 5)},
+        "B": {"B25046_001": (300, 20), "B25044_001": (200, 9)},
+    }
+    v = val(make_frame(rows), ["A", "B"], "veh_per_hh")
+    assert v.estimate == pytest.approx(430 / 300)  # not the mean of 1.3 and 1.5
 
 
 # ------------------------------------------------------------------------------- bad input
@@ -511,3 +516,21 @@ def test_profile_and_table_for_1000_zips_fit_the_one_second_budget() -> None:
     elapsed = time.perf_counter() - start
     assert len(table.zips) == 1000 and idx
     assert np.isfinite(elapsed) and elapsed <= 1.0, f"took {elapsed:.2f}s (budget 1s)"
+
+
+# ------------------------------------------------------------------------------- bracket_median
+def test_bracket_median_interpolates_even_for_one_zip_and_ignores_the_published_value() -> None:
+    # 300 households in $60-75k: 60,000 + (150 / 300) * 15,000 = 67,500, while the ZIP's
+    # published median says 70,000 (the gap SPEC §6.4 asks us to measure on real data)
+    a, ca = income_rows({12: 300}, 70_000)
+    frame = make_frame({"A": a}, {"A": ca})
+    got = profile.bracket_median(frame, ["A"], "median_hh_income")
+    assert got.estimate == pytest.approx(67_500)
+    assert got.source == "interpolated" and got.code == "none"
+    assert val(frame, ["A"], "median_hh_income").estimate == 70_000  # build_profile is unchanged
+
+
+def test_bracket_median_rejects_metrics_that_are_not_medians() -> None:
+    frame = make_frame(HH)
+    with pytest.raises(ValueError, match="not a median"):
+        profile.bracket_median(frame, ["A"], "hh")

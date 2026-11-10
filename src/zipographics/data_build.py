@@ -228,8 +228,9 @@ class Sources:
 
 DEFAULT_SOURCES = Sources()
 #: Douglas-Peucker tolerance in degrees for the map polygons. The map needs no area math, so this
-#: is coarser than Zipcator's 0.0005 (~40 MB); Phase 4 measures the resulting file size.
-DEFAULT_TOLERANCE = 0.002
+#: is much coarser than Zipcator's 0.0005. Measured on the real boundary file: 0.002 -> 43 MB,
+#: 0.003 -> 31 MB, 0.004 -> 25 MB, 0.005 -> 21 MB, 0.01 -> 12 MB; 0.004 meets the ~30 MB target.
+DEFAULT_TOLERANCE = 0.004
 MIN_ROWS = config.MIN_ZCTA_ROWS
 _SENTINEL_FLOOR = -100_000_000
 _STATE_GAP_LIMIT = 0.01  # more than 1 % of ZCTAs without a state means a broken join

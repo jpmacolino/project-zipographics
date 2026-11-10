@@ -149,6 +149,7 @@ _CELL_LABELS: dict[str, str] = {
     "B25024_002": _t("1, detached"),
     "B25024_003": _t("1, attached"),
     "B25024_010": _t("Mobile home"),
+    "B25046_001": r"aggregate number of vehicles available:?$",
     "B25044_003": _t("Owner occupied", "No vehicle available"),
     "B25044_010": _t("Renter occupied", "No vehicle available"),
     **{f"B25044_{4 + i:03d}": _t("Owner occupied", v) for i, v in enumerate(_VEHICLES)},
@@ -443,12 +444,10 @@ _share(
 )
 
 # ----------------------------------------------------------------------------- vehicles
-_VEH_WEIGHTS = [(4, 1), (5, 2), (6, 3), (7, 4), (8, 5), (11, 1), (12, 2), (13, 3), (14, 4), (15, 5)]
 _add("veh_per_hh", "Vehicles per household", "ratio", "ratio",
-     RatioSpec(tuple((_var(f"B25044_{n:03d}"), float(w)) for n, w in _VEH_WEIGHTS),
-               _cells("B25044", 1)),
+     RatioSpec(((_var("B25046_001"), 1.0),), _cells("B25044", 1)),
      "proxy_other", "occupied housing units",
-     "At least this many vehicles per household: '5 or more' is counted as 5 (ACS B25044).")  # fmt: skip
+     "Aggregate vehicles available divided by occupied housing units (ACS B25046 / B25044).")  # fmt: skip
 _share("veh_0", "No vehicle", "proxy_other", _cells("B25044", 3, 10), _cells("B25044", 1),
        "occupied housing units", "Share of households with no vehicle available (ACS B25044).")  # fmt: skip
 _share("veh_2p", "2+ vehicles", "proxy_other", _cells("B25044", 5, 6, 7, 8, 12, 13, 14, 15),

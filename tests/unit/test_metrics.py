@@ -222,6 +222,7 @@ def test_tables_in_use_match_spec_4_2() -> None:
         "B25035",
         "B25038",
         "B25044",
+        "B25046",
         "B25063",
         "B25064",
         "B25075",
@@ -381,15 +382,15 @@ def test_race_shares_partition_the_population() -> None:
     assert sorted(cells) == [f"B02001_{n:03d}" for n in range(2, 9)]
 
 
-def test_vehicles_per_household_weights_and_universe() -> None:
+def test_vehicles_per_household_uses_the_aggregate_vehicles_table() -> None:
+    # B25046 (aggregate vehicles) is at ZCTA level (Phase 4 check), so SPEC §6.5 prefers it
+    # to counting B25044's "5 or more" as 5: the result is exact, not an "at least"
     spec = m.BY_ID["veh_per_hh"].spec
     assert isinstance(spec, m.RatioSpec)
-    weights = dict(spec.num)
-    assert weights["B25044_005"] == 2 and weights["B25044_008"] == 5  # "5 or more" counts as 5
-    assert weights["B25044_012"] == 2 and weights["B25044_015"] == 5
-    assert "B25044_003" not in weights and "B25044_010" not in weights  # no vehicle adds 0
+    assert spec.num == (("B25046_001", 1.0),)
     assert spec.den == ("B25044_001",)
-    assert "at least" in m.BY_ID["veh_per_hh"].help.lower()
+    assert "aggregate" in m.BY_ID["veh_per_hh"].help.lower()
+    assert "B25044_004" not in m.VARIABLES and "B25044_011" not in m.VARIABLES  # no longer needed
 
 
 def test_mean_incomes() -> None:

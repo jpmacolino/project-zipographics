@@ -268,7 +268,8 @@ def test_median_moe_hand_calculation() -> None:
     # counts [100, 200, 100] with MOEs [20, 30, 20]; bounds [0,10) [10,20) [20,30)
     #   N = 400; MOE_N = sqrt(400 + 900 + 400) = 41.2311
     #   median bracket k = 2nd; X = 300 with MOE_X = sqrt(400 + 900) = 36.0555
-    #   SE(p) = sqrt(MOE_X^2 - 0.25 * MOE_N^2) / N / 1.645 = sqrt(1300 - 425) / 400 / 1.645 = 0.044955
+    #   SE(p) = sqrt(MOE_X^2 - 0.25 * MOE_N^2) / N / 1.645
+    #         = sqrt(1300 - 425) / 400 / 1.645 = 0.044955
     #   p_lo = 0.455045, p_hi = 0.544955; values: 10 + (p*400 - 100)/200 * 10 = 14.10090, 15.89910
     #   SE(median) = (15.89910 - 14.10090) / 2 = 0.89910; MOE = 1.645 * SE = 1.47902
     moe = stats.median_moe([100, 200, 100], [20, 30, 20], [(0, 10), (10, 20), (20, 30)])

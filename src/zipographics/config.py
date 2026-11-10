@@ -21,3 +21,11 @@ SMALL_HOUSEHOLDS = 300
 #: How many invalid tokens / repairs the review screen lists before "and N more" (SPEC §5.2, §5.4).
 SHOWN_INVALID = 20
 SHOWN_REPAIRED = 10
+
+#: Reliability tiers from the coefficient of variation, in percent (SPEC §6.6, D2). The Census
+#: Bureau publishes no numeric thresholds (DECISIONS V9); these are a judgment call.
+CV_GOOD = 15.0
+CV_CAUTION = 30.0
+
+#: z-score for a 90 % margin of error: SE = MOE / 1.645 (ACS General Handbook, formula 2).
+Z90 = 1.645

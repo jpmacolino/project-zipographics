@@ -235,3 +235,25 @@ def test_a_large_input_renders_every_row_quickly() -> None:
     a = an.analyze(art, ParsedInput(zips=tuple(world)), OFF, project_name="Big")
     html = report.render(a, filters.apply(a, []), geo=None, now=NOW, version="1")
     assert html.count("<tr") >= 400
+
+
+def test_chart_legends_sit_below_the_plot_not_over_the_bars() -> None:
+    # Visual QA: the legend sat inside the plot and covered bar labels
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    from zipographics import charts
+
+    a = an.analyze(ART, parse_paste("33602 33606"), OFF, project_name="x")
+    for cid in ("income", "tenure", "housing_age"):
+        fig = report._chart_figure(charts.chart_data(a, cid))
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        ax = fig.axes[0]
+        legend = ax.get_legend()
+        assert legend is not None
+        renderer = canvas.get_renderer()
+        legend_box = legend.get_window_extent(renderer)
+        tick_bottoms = [lb.get_window_extent(renderer).y0 for lb in ax.get_xticklabels()]
+        # display coordinates: y grows upward, so "below" means a smaller y
+        assert legend_box.y1 <= ax.get_window_extent(renderer).y0, cid
+        assert legend_box.y1 <= min(tick_bottoms) + 1, cid  # and clear of the axis numbers

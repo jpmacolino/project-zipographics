@@ -464,9 +464,9 @@ def _exports_section(a: analysis.Analysis, art: data.Artifacts, result: filters.
     )
     c1, c2 = st.columns(2)
     c1.caption("Comma-separated")
-    c1.code(comma or " ", language=None)
+    c1.code(comma or " ", language=None, wrap_lines=True)
     c2.caption("One per line")
-    c2.code(newline or " ", language=None)
+    c2.code(newline or " ", language=None, wrap_lines=True)
     st.download_button(
         "Download ZIP list (.txt)",
         newline.encode("utf-8"),

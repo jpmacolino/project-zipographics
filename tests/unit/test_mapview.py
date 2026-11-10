@@ -215,3 +215,26 @@ def test_a_thousand_zips_prepare_quickly() -> None:
     layer = mapview.layer(a, "owner", None, geo)
     assert layer is not None and len(layer.geojson["features"]) == 1000
     assert time.perf_counter() - start < 2.0  # SPEC 7: 1 s on the target laptop; CI slack
+
+
+# ------------------------------------------------------------------------- visibility (visual QA)
+def _luminance(hex_color: str) -> float:
+    r, g, b = (int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def test_the_neutral_style_is_visible_on_a_street_map() -> None:
+    # Visual QA: pale grey fills with white outlines vanished against the light OpenStreetMap tiles
+    layer = mapview.layer(run(FORCED), None, None, GEO)
+    assert layer is not None
+    st = next(iter(features(layer).values()))["properties"]["style"]
+    assert _luminance(st["color"]) < 90  # a dark outline
+    assert _luminance(st["fillColor"]) < 190  # a mid-grey fill, not near-white
+    assert st["weight"] >= 1.2 and st["fillOpacity"] >= 0.5
+
+
+def test_the_lightest_choropleth_class_is_distinct_from_the_neutral_fill() -> None:
+    layer = mapview.layer(run(), "owner", None, GEO)
+    assert layer is not None
+    light = min(i.color for i in layer.legend)
+    assert abs(_luminance(light) - _luminance(mapview.NEUTRAL)) > 15

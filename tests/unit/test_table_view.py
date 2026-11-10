@@ -166,3 +166,14 @@ def test_restricted_mode_shows_values_and_margins_in_input_or_zip_order(policy) 
 def test_unknown_metric_ids_are_rejected() -> None:
     with pytest.raises(ValueError, match="Unknown metric"):
         table.build_view(run(), None, metric_ids=["nope"])
+
+
+def test_overlaps_in_the_table_are_rounded_for_display() -> None:
+    parsed = ParsedInput(
+        zips=("33602", "33606"),
+        overlaps={"33602": 96.0737},
+        blank_overlap=("33606",),
+        source="zipcator",
+    )
+    v = table.build_view(an.analyze(ART, parsed, OFF), None, metric_ids=["owner"])
+    assert col(v, "Overlap %") == ["96.1", "100"]

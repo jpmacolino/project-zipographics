@@ -145,3 +145,12 @@ def test_the_text_alternative_table_has_the_numbers() -> None:
     assert t.loc[0, "Category"] == "Owner-occupied" and t.loc[0, "Florida"] == "66.0 %"
     race = charts.table_frame(charts.chart_data(run(), "race"))
     assert set(race["Trade area"]) == {"\N{EM DASH}"}
+
+
+def test_the_chart_height_is_a_step_per_category_so_it_cannot_collapse() -> None:
+    # Visual QA: with a fixed pixel height the plot collapsed to about 40 px and the bars overlapped
+    for cid, n in (("income", 7), ("tenure", 2), ("race", 7)):
+        spec = charts.altair_chart(charts.chart_data(run(), cid)).to_dict()
+        assert spec["height"] == {"step": charts.ROW_STEP}, cid
+        assert n == len(charts.chart_data(run(), cid).rows)
+    assert charts.ROW_STEP >= 36  # room for two bars and a label per category

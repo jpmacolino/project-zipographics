@@ -37,6 +37,7 @@ from zipographics.ui import (
     DASH,
     fmt_moe,
     fmt_number,
+    fmt_overlap,
     fmt_value,
 )
 
@@ -115,8 +116,13 @@ def _to_svg(fig: Figure, label: str) -> str:
 
 
 def _chart_svg(d: ChartData) -> str:
+    fig = _chart_figure(d)
+    return _to_svg(fig, f"{d.title}: trade area compared with {d.benchmark_name}")
+
+
+def _chart_figure(d: ChartData) -> Figure:
     n = len(d.rows)
-    fig = Figure(figsize=(6.2, 0.62 * n + 1.1))
+    fig = Figure(figsize=(6.2, 0.62 * n + 1.5))
     ax = fig.subplots()
     ys = list(range(n))
     h = 0.36
@@ -137,8 +143,9 @@ def _chart_svg(d: ChartData) -> str:
     ax.tick_params(axis="x", labelsize=7)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
-    ax.legend(fontsize=7, frameon=False, loc="lower right")
-    return _to_svg(fig, f"{d.title}: trade area compared with {d.benchmark_name}")
+    # below the axes: inside the plot it covered bar labels (visual QA)
+    ax.legend(fontsize=7, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2)
+    return fig
 
 
 def _shade(ax: Axes, sub: gpd.GeoDataFrame, a: Analysis, metric_id: str) -> None:
@@ -236,7 +243,7 @@ def _table(
             pct = a.overlap_pct(z)
             hh, pop = a.in_radius(z, "hh"), a.in_radius(z, "pop")
             cells += [
-                f"<td>{'' if pct is None else f'{pct:g}'}</td>",
+                f"<td>{'' if pct is None else fmt_overlap(pct)}</td>",
                 f"<td>{_e(fmt_number(metrics.BY_ID['hh'], hh))}</td>",
                 f"<td>{_e(fmt_number(metrics.BY_ID['pop'], pop))}</td>",
             ]

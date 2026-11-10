@@ -75,3 +75,10 @@ def test_coded_bound_convention() -> None:
     assert stats.coded_bound(250_001, "top") == 250_000
     assert stats.coded_bound(2_499, "bottom") == 2_500
     assert stats.coded_bound(42.0, "none") == 42.0
+
+
+def test_overlap_percentages_show_one_decimal_at_most() -> None:
+    # Visual QA: the table showed 96.0737; an overlap is shown as 96.1 (and 100, not 100.0)
+    assert [ui.fmt_overlap(x) for x in (100.0, 96.0737, 76.1523, 50.0, 0.0065, 99.96)] == [
+        "100", "96.1", "76.2", "50", "<0.1", "100",
+    ]  # fmt: skip

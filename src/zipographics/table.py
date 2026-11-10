@@ -18,7 +18,7 @@ from zipographics import metrics, stats
 from zipographics.analysis import Analysis
 from zipographics.filters import FilterResult
 from zipographics.restricted import label_of, require_unrestricted
-from zipographics.ui import DAGGER, DASH, fmt_index, fmt_moe, fmt_number, fmt_value
+from zipographics.ui import DAGGER, DASH, fmt_index, fmt_moe, fmt_number, fmt_overlap, fmt_value
 
 INPUT = "input"
 ZIP = "zip"
@@ -169,7 +169,7 @@ def build_view(
             style.append(_tier_css(v.tier, v.estimate))
         if a.weighted:
             hh = fmt_number(metrics.BY_ID["hh"], a.in_radius(z, "hh"))
-            cells += [f"{a.overlap_pct(z):g}", hh]
+            cells += [fmt_overlap(a.overlap_pct(z) or 0.0), hh]
             style += ["", ""]
         for _, mid, kind in columns:
             m = metrics.BY_ID[mid]

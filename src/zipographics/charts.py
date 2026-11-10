@@ -234,6 +234,10 @@ _TRADE_COLOR, _BENCH_COLOR = (
 )  # dark blue vs light grey: also differ in lightness
 
 
+#: Pixels per category band (two bars and a label); a Step height cannot collapse the plot.
+ROW_STEP = 44
+
+
 def to_frame(d: ChartData) -> pd.DataFrame:
     """Long frame (Category, Series, Share) for a grouped bar chart; unknown shares stay null."""
     rows = []
@@ -261,7 +265,7 @@ def altair_chart(d: ChartData) -> alt.Chart:
             ),
             tooltip=["Category:N", "Series:N", alt.Tooltip("Share:Q", format=".1%")],
         )
-        .properties(title=d.title, height=max(110, 34 * len(order)))
+        .properties(title=d.title, height=alt.Step(ROW_STEP))
     )
     return chart
 

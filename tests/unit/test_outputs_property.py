@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,7 +25,20 @@ from shapely.geometry import box
 from synth_art import Z, make_artifacts
 
 from zipographics import analysis as an
-from zipographics import charts, export, filters, lenses, metrics, report, table, ui, verticals
+from zipographics import (
+    charts,
+    export,
+    filters,
+    flow,
+    kpis,
+    lenses,
+    mapview,
+    metrics,
+    report,
+    table,
+    ui,
+    verticals,
+)
 from zipographics.models import ParsedInput, Rule, UsePolicy
 from zipographics.review import review_lines
 
@@ -202,9 +216,57 @@ def out_charts(s: Scenario) -> None:
         assert d.rows
 
 
+def out_kpi_cards(s: Scenario) -> None:
+    cards = kpis.cards(s.analysis)
+    assert [c.metric_id for c in cards] == list(s.analysis.lens.all_kpis)
+    kpis.text_lines(s.analysis)
+
+
+def out_chart_specs(s: Scenario) -> None:
+    for d in (*charts.charts_for(s.analysis), *charts.more_demographics(s.analysis)):
+        assert charts.altair_chart(d).to_dict()["mark"]
+        assert len(charts.to_frame(d)) == 2 * len(d.rows) and len(charts.table_frame(d)) == len(
+            d.rows
+        )
+
+
+def out_table_view(s: Scenario) -> None:
+    a = s.analysis
+    ids = [m.id for m in metrics.REGISTRY]
+    view = table.build_view(a, s.result, metric_ids=ids, show_moe=True)
+    assert list(view.frame["ZIP"]) == list(view.zips) and view.frame.shape == view.styles.shape
+    table.build_view(a, s.result, metric_ids=ids[:10], sort="zip", descending=True)
+    table.unreliable_cells(a, ids)
+    if not a.restricted:
+        table.build_view(a, s.result, metric_ids=ids, index=True, sort="owner", only_matching=True)
+
+
+def out_map(s: Scenario) -> None:
+    a = s.analysis
+    for metric in ("owner", "median_hh_income", "pop", "age_65p"):
+        layer = mapview.layer(a, metric, s.result, s.geo)
+        if layer is None:
+            continue
+        assert layer.style == ("neutral" if a.restricted else "choropleth")
+        json.dumps(layer.geojson)  # serializable for folium
+        if a.restricted:
+            assert {f["properties"]["style"]["fillColor"] for f in layer.geojson["features"]} == {
+                mapview.NEUTRAL
+            }
+
+
+def out_flow(s: Scenario) -> None:
+    a = s.analysis
+    choices = flow.benchmark_choices(a.options)
+    assert choices and flow.find_choice(choices, choices[0].label) is choices[0]
+    flow.span_message(a)
+    assert flow.sort_choices(restricted=a.restricted)
+
+
 ALL_OUTPUTS: list[Callable[[Scenario], None]] = [
     out_csv, out_csv_all_metrics, out_report, out_zip_list, out_review, out_tables,
-    out_kpis_and_formatting, out_charts,
+    out_kpis_and_formatting, out_charts, out_kpi_cards, out_chart_specs, out_table_view,
+    out_map, out_flow,
 ]  # fmt: skip
 
 

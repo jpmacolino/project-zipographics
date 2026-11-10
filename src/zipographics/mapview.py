@@ -26,10 +26,11 @@ from zipographics.filters import FilterResult
 from zipographics.restricted import require_unrestricted
 from zipographics.ui import fmt_moe, fmt_number, fmt_value
 
-NEUTRAL = "#cfd6de"
+NEUTRAL = "#9aa7b4"  # mid grey: still visible on a street map (and on the report's white page)
 #: Sequential blues (ColorBrewer, colorblind-safe), light to dark.
 _PALETTE = ("#c6dbef", "#9ecae1", "#6baed6", "#3182bd", "#08519c")
 _OUTLINE, _OUTLINE_MATCH, _OUTLINE_UNRELIABLE = "#ffffff", "#111111", "#444444"
+_OUTLINE_NEUTRAL = "#2f3e4e"  # restricted mode: one fill, one clearly visible outline
 _FILL_OPACITY = 0.82
 _DASH = "4 3"
 
@@ -153,7 +154,7 @@ def layer(
     wins = set(result.qualifying) if result is not None and result.active and not locked else None
     features = []
     for i, (z, geom) in enumerate(zip(zips, sub.geometry, strict=True)):
-        fill, outline, weight, dash = NEUTRAL, _OUTLINE, 0.8, None
+        fill, outline, weight, dash = NEUTRAL, _OUTLINE_NEUTRAL if locked else _OUTLINE, 0.8, None
         props: dict[str, Any] = {"zip": z}
         if cls is not None and cls.bins[i] is not None:
             fill = cls.shades[cls.bins[i]]  # type: ignore[index]
@@ -165,6 +166,8 @@ def layer(
             props["qualifies"] = z in wins
             if z in wins:
                 outline, weight, dash = _OUTLINE_MATCH, 3.0, None
+        if locked:
+            weight = 1.4
         props["style"] = {
             "fillColor": fill, "color": outline, "weight": weight,
             "dashArray": dash, "fillOpacity": _FILL_OPACITY,

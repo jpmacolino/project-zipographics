@@ -110,6 +110,14 @@ def fmt_moe(metric: Metric, value: MetricValue) -> str:
     return f"{PLUS_MINUS} {fmt_number(metric, value.moe)}"
 
 
+def fmt_overlap(pct: float) -> str:
+    """An overlap percentage for display: one decimal at most, whole numbers without ".0"."""
+    if 0 < pct < 0.05:  # a sliver of a ZIP (Zipcator writes values like 0.006514)
+        return "<0.1"
+    text = f"{pct:.1f}"
+    return text[:-2] if text.endswith(".0") else text
+
+
 def fmt_index(index: IndexValue | int | None) -> str:
     n = index.value if isinstance(index, IndexValue) else index
     return DASH if n is None else str(n)

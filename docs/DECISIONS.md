@@ -473,3 +473,72 @@ declares 74 metrics (Appendix C) over about 270 Census variables.
 - **Hypothesis sweeps.** Running the numeric property tests with 40 more seeds exposed scalar/vectorized
   disagreements at absurd magnitudes (QA_REPORT #15); the rule going forward is that both
   implementations return "unknown" for non-finite intermediates and for an index above 1e9.
+
+### Phase 4 (2026-11-09/10): the real build, and what it verified
+
+First real run: ACS 2020-2024 5-year (`--vintage 2024`), 223 then 222 variables, 33,772 ZCTAs,
+3,222 counties, 52 states, the nation. Every number below is from the real data or the official sources.
+
+**Verified facts (updating V1-V13)**
+- **V1 (vintage).** `api.census.gov/data/2025/acs/acs5` is still HTTP 404 on 2026-11-10 (only the
+  2025 1-year exists). 2020-2024 stays the current 5-year vintage; nothing for the owner to decide.
+- **V3/V4 (API).** 50 names per request and the ZCTA-wide call (`for=zip%20code%20tabulation%20area:*`, no
+  `in=`) work as documented; the whole build is about 60 requests and took about 75 s with a warm cache.
+- **V5 (tables).** Every table in the registry exists in the 2024 dataset and resolved by ID with its
+  label unchanged: **all variables resolved, none `moved`**. **B02001 (race) is available at ZCTA level
+  (100 % non-null). B25046 (aggregate vehicles) is available at ZCTA level (97 % non-null)**, so
+  `veh_per_hh` now uses B25046 / B25044_001 as SPEC §6.5 prefers (exact, no "at least" caveat); the two
+  B25044 one-vehicle cells it needed were dropped from the registry.
+- **V6 (sentinels).** The **5-year notes page does not exist** (HTTP 404). The 5-year site
+  ([acs-5year.html](https://www.census.gov/data/developers/data-sets/acs-5year.html), revised 2026-05-20) points
+  to the 1-year notes page, revised 2026-07-20, whose table is exactly our six values plus
+  `median-`/`median+` and `null`: -666666666 `-`, -999999999 `N`, -888888888 `(X)`, -222222222 `**`,
+  -333333333 `***`, -555555555 `*****`. **Observed in the real data:** `-666666666` only as an *estimate*
+  (18,863 cells); `-222222222`, `-333333333` and `-555555555` only as *margins of error* (18,863, 2,053 and
+  17,069); `-999999999` and `-888888888` never appeared in these tables. No unknown large negative value.
+- **V7 (top/bottom codes).** Detected from the estimate annotation, whose real strings are `250,000+`,
+  `2,500-`, `2,000,000+`, `10,000-`, `3,500+`, `100-`, `1939-`, `2020+` (and `-` for "not computable", which
+  is not a code). Cross-check of the believed codes: median household income top 250,001 (118 ZCTAs),
+  bottom 2,499 (15); home value top 2,000,001 (100), bottom 9,999 (22); gross rent top 3,501 (134), bottom 99
+  (4); year built top 2021 (9), **bottom 1938 (1,647: "1939 or earlier")**; median age has none. Phase 5/6
+  must display coded values from their *bound* ("$250,000+", "1939 or earlier"), not the stored number.
+- **V8/V9 zero estimates (closes the open item).** Neither the 2020 nor the 2025 "Worked Examples for
+  Approximating Margins of Error" says to include only the largest zero-estimate MOE in a sum (searched both
+  texts). The summed-MOE rule stays as implemented. They do warn that approximated SEs can differ from the
+  published ones: they under-estimated in their Example A and **over-estimated by up to 307 % for a sum that
+  involves controlled estimates (sex by age)** (Example B). The B01001-based age metrics sum many such
+  cells, so their multi-ZIP MOEs are conservative; they stay labeled approximate.
+- **V13 (network).** `api.census.gov` was reachable from the owner's Windows machine; no proxy problem.
+- **D8 measured.** Across 1,489 sampled ZCTAs (≥ 200 households, uncoded): interpolated vs published median
+  household income differ by a median of **1.22 %** (95th percentile **5.99 %**, max 17.2 %); the
+  interpolated MOE is **1.14×** the published one at the median (10th/90th percentile 0.79 / 1.77). So the
+  bracket-derived MOE is mildly conservative, as the Phase 2 reviewer's simulation predicted.
+
+**B16. Rules the real data forced (official-source conflicts; reported to the owner).**
+1. **Published medians get a 90 % coverage floor, not 95 %.** SPEC §4.4 says a core KPI variable must be
+   non-null for 95 % of ZCTAs with population > 0. Real coverage of the published median household income is
+   **92.1 %**: the ACS suppresses medians for small areas (3 % of ZCTAs with under 10 households have one,
+   33 % of those with 10-24, 87 % of those with 100-249, 95 %+ above 250). It is not a broken join: counts and
+   shares are 100 % and every null-median ZCTA still has its bracket counts. The spec floor stays 95 % for
+   counts and shares; **published medians use `config.MEDIAN_COVERAGE_FLOOR = 0.90`**. Alternative the owner
+   may prefer: keep 95 % and measure only ZCTAs with ≥ 100 households, or interpolate a suppressed single-ZIP
+   median from its brackets (`profile.bracket_median` exists for that); not done, because a suppressed value
+   shown as "—" is the honest default.
+2. **Connecticut has no county benchmark.** ACS 2022 onward publishes Connecticut by **planning region**
+   (county ids `09110`-`09190`); the 2020 ZCTA-to-county relationship file still uses the 8 legacy counties
+   (`09001`-`09015`). 288 ZCTAs (0.85 %) therefore keep their county *name* but get no `county_fips`, so no
+   county benchmark is offered for them (state and national benchmarks are unaffected). Limit
+   `config.COUNTY_GAP_LIMIT` = 2 % (a larger gap means a broken join); recorded in
+   `metadata.json["county_benchmark_gaps"]`. No official ZCTA-to-planning-region crosswalk exists.
+3. **Polygons without ACS data are dropped.** The boundary file has 19 ZCTAs the ACS does not publish: 17
+   island-area ZCTAs (VI `008xx`; GU, MP and AS `969xx`) and two New York ZCTAs (`11717`, `11798`). They are
+   removed from the map and listed in the metadata. More than
+   `config.MAX_GEOMETRY_EXTRA` = 25 unmatched polygons fails the build (wrong file).
+4. **Map tolerance 0.004°** (about 440 m): 25 MB. Measured on the real boundary file: 0.002 → 43 MB, 0.003 →
+   31 MB, 0.004 → 25 MB, 0.005 → 21 MB, 0.01 → 12 MB.
+5. **Artifacts:** `zcta_profile.parquet` 20 MB, `benchmarks.parquet` 3 MB, `zcta_geo.parquet` 25 MB;
+   `data/raw` cache 201 MB (all gitignored).
+
+**Not changed, by design:** a ZCTA with population but no households (355 group-quarters ZCTAs) stays in the
+data; `33601` is not a ZCTA (checked: absent from the profile); population totals of the 33,772 ZCTAs are
+within 3 % of the national figure (ZCTAs approximate the 50 states, DC and PR).

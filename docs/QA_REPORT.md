@@ -147,3 +147,23 @@ Gates after triage: ruff, format, mypy, size, secrets pass; **884 tests passed**
 truncate-before-redact, truncated-JSON classification, corrupt-cache trust, case-sensitive redaction,
 extras scrubbing, makeRecord hook, benchmark column slice, non-atomic publish, map coverage floor,
 interrupt exit code, blank-env override, infinite values).
+
+### Phase 4: real data build (2026-11-09/10)
+Gates: ruff, format, mypy, size and secrets pass; **902 default tests** and **18 `data` tests** pass; the
+3 default-skipped live `network` tests plus 2 new ones were run once and pass (key accepted; the real
+registry resolves against the real `variables.json`; B25046 and B02001 available at ZCTA level).
+
+| bug # | symptom (first real build) | root cause | fix | regression test |
+|---|---|---|---|---|
+| 24 | exit 5: median household income non-null for 92.1 % of ZCTAs with population (< 95 %) | the ACS suppresses published medians for small areas; the spec floor assumed ≈ 100 % | separate 90 % floor for published medians (DECISIONS B16.1) | `test_published_medians_have_their_own_ninety_percent_floor`, `test_a_median_below_ninety_percent_still_fails`, `test_counts_and_shares_keep_the_ninety_five_percent_floor` |
+| 25 | exit 5: no county benchmark for `09001`... (Connecticut) | ACS 2022+ uses planning regions; the 2020 relationship file uses legacy counties | CT ZCTAs keep the county name but not the FIPS; limit 2 %; recorded in metadata (B16.2) | `test_a_county_without_an_acs_row_keeps_its_name_but_loses_its_fips` and 3 more in `test_realdata_rules.py` |
+| 26 | exit 5: geometry has ZIPs with no profile row (`00802`, `00820`...) | the boundary file includes 19 ZCTAs the ACS does not publish | dropped from the map, recorded; > 25 fails (B16.3) | `test_polygons_without_a_profile_row_are_dropped_and_recorded`, `test_a_boundary_file_with_many_unmatched_polygons_is_rejected` |
+| 27 | pandas `PerformanceWarning` (fragmented frame) on every level | `out[col] = ...` inserted about 450 columns one at a time | columns built at once | `test_cleaning_hundreds_of_variables_does_not_fragment_the_frame` |
+| 28 | map 43 MB at tolerance 0.002 (target ≈ 30 MB) | default tolerance too fine for a map-only layer | default 0.004 → 25 MB (measured 5 values, B16.4) | `test_the_map_covers_the_profile_within_the_size_target` (data) |
+
+Measured on the real data (not snapshots; recorded here as required by SPEC §6.4/§9.3): published vs
+interpolated median household income, 1,489 sampled ZCTAs: median gap **1.22 %**, p95 **5.99 %**, max 17.2 %;
+interpolated MOE / published MOE: median **1.14**, p10 0.79, p90 1.77. Coverage: 216 of 223 variables ≥ 99 %;
+lowest: gross rent 77.6 %, home value 91.2 %, median income 92.1 %, mean income 96.2 %, year built 97.0 %,
+per capita income 98.5 %, median age 98.9 % (all published medians/means suppressed for small areas).
+Sentinels, top/bottom codes, label resolution and the 5-year notes page: DECISIONS "Phase 4".

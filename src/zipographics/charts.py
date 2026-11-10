@@ -11,9 +11,14 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+import altair as alt
+import pandas as pd
+
+from zipographics import metrics
 from zipographics.analysis import Analysis
 from zipographics.lenses import CORE_CHARTS, MORE_DEMOGRAPHICS_CHARTS
 from zipographics.stats import Tier
+from zipographics.ui import fmt_number
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,8 +217,71 @@ __all__ = [
     "ChartData",
     "ChartRow",
     "ChartSpec",
+    "altair_chart",
     "chart_data",
     "charts_for",
     "more_demographics",
     "move_in_labels",
+    "table_frame",
+    "to_frame",
 ]
+
+
+# ----------------------------------------------------------------------------- rendering data
+_TRADE_COLOR, _BENCH_COLOR = (
+    "#1f4e79",
+    "#a3acb8",
+)  # dark blue vs light grey: also differ in lightness
+
+
+def to_frame(d: ChartData) -> pd.DataFrame:
+    """Long frame (Category, Series, Share) for a grouped bar chart; unknown shares stay null."""
+    rows = []
+    for r in d.rows:
+        rows.append({"Category": r.label, "Series": "Trade area", "Share": r.trade})
+        rows.append({"Category": r.label, "Series": d.benchmark_name, "Share": r.bench})
+    return pd.DataFrame(rows, columns=["Category", "Series", "Share"])
+
+
+def altair_chart(d: ChartData) -> alt.Chart:
+    """Trade area vs benchmark as grouped horizontal bars, shares in percent."""
+    order = [r.label for r in d.rows]
+    series = ["Trade area", d.benchmark_name]
+    chart: alt.Chart = (
+        alt.Chart(to_frame(d))
+        .mark_bar()
+        .encode(
+            y=alt.Y("Category:N", sort=order, title=None),
+            yOffset=alt.YOffset("Series:N", sort=series),
+            x=alt.X("Share:Q", axis=alt.Axis(format="%"), title="Share"),
+            color=alt.Color(
+                "Series:N",
+                scale=alt.Scale(domain=series, range=[_TRADE_COLOR, _BENCH_COLOR]),
+                legend=alt.Legend(orient="bottom", title=None),
+            ),
+            tooltip=["Category:N", "Series:N", alt.Tooltip("Share:Q", format=".1%")],
+        )
+        .properties(title=d.title, height=max(110, 34 * len(order)))
+    )
+    return chart
+
+
+def table_frame(d: ChartData) -> pd.DataFrame:
+    """The chart's numbers as text, for the expander under it (a text alternative)."""
+    moe_metric = metrics.BY_ID
+    rows = []
+    for r in d.rows:
+        m = moe_metric[r.metric_id]
+        rows.append(
+            {
+                "Category": r.label,
+                "Trade area": fmt_number(m, r.trade),
+                d.benchmark_name: fmt_number(m, r.bench),
+                "Margin of error": ""
+                if r.trade_moe is None
+                else f"\N{PLUS-MINUS SIGN} {r.trade_moe * 100:.1f} pts",
+            }
+        )
+    return pd.DataFrame(
+        rows, columns=["Category", "Trade area", d.benchmark_name, "Margin of error"]
+    )

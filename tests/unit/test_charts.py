@@ -114,3 +114,34 @@ def test_restricted_mode_still_shows_the_context_charts() -> None:
 def test_unknown_chart_is_an_error() -> None:
     with pytest.raises(ValueError, match="Unknown chart"):
         charts.chart_data(run(), "pie")
+
+
+# ----------------------------------------------------------------------------- app rendering data
+def test_the_long_frame_has_a_row_per_category_and_series() -> None:
+    d = charts.chart_data(run(), "income")
+    frame = charts.to_frame(d)
+    assert len(frame) == 2 * len(d.rows)
+    assert set(frame["Series"]) == {"Trade area", "Florida"}
+    assert list(frame["Category"].unique()) == [r.label for r in d.rows]  # order kept
+
+
+def test_unknown_shares_are_null_in_the_frame_not_zero() -> None:
+    frame = charts.to_frame(charts.chart_data(run(), "race"))
+    assert frame["Share"].isna().all()
+
+
+def test_the_altair_chart_is_a_grouped_bar_with_a_colorblind_safe_palette() -> None:
+    spec = charts.altair_chart(charts.chart_data(run(), "tenure")).to_dict()
+    assert spec["mark"]["type"] == "bar" or spec["mark"] == "bar"
+    enc = spec["encoding"]
+    assert "yOffset" in enc and enc["x"]["axis"]["format"] == "%"
+    assert enc["color"]["scale"]["range"][0] != enc["color"]["scale"]["range"][1]
+    assert enc["y"]["sort"] == ["Owner-occupied", "Renter-occupied"]
+
+
+def test_the_text_alternative_table_has_the_numbers() -> None:
+    t = charts.table_frame(charts.chart_data(run(), "tenure"))
+    assert list(t.columns) == ["Category", "Trade area", "Florida", "Margin of error"]
+    assert t.loc[0, "Category"] == "Owner-occupied" and t.loc[0, "Florida"] == "66.0 %"
+    race = charts.table_frame(charts.chart_data(run(), "race"))
+    assert set(race["Trade area"]) == {"\N{EM DASH}"}

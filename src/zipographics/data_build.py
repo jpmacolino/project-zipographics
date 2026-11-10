@@ -15,18 +15,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from zipographics.errors import BuildError as BuildError  # re-exported
 from zipographics.metrics import MedianSpec, Var
 
 Dataset = Literal["detailed", "profile"]
 VarMeta = Mapping[str, str]  # one entry of variables.json: {"label": ..., "group": ...}
-
-
-class BuildError(Exception):
-    """A failed build step. ``exit_code`` is the CLI exit code (5 = validation failure)."""
-
-    def __init__(self, message: str, exit_code: int = 5) -> None:
-        super().__init__(message)
-        self.exit_code = exit_code
 
 
 # ----------------------------------------------------------------------------- bracket bounds

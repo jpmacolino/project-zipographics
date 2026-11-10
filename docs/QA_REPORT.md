@@ -266,3 +266,9 @@ New bugs 42-52 with regression tests: `test_the_chart_height_is_a_step_per_categ
 `tests/ui/test_app_regressions.py` (prepared-report staleness x3, second Zipcator file, restricted switch x2,
 column choice, no sortable grid, rule unit, exclude-unreliable, attestation placement, both list downloads,
 invalid rule); `test_more_implicit_encodings_are_found` and friends.
+
+Gates after triage: ruff, format, mypy, size, secrets and encoding pass; **2,293 default tests** (79 of them
+AppTest), coverage **98.31 %** (line + branch, `src/zipographics`; the app file is covered by AppTest only),
+**56 `data` tests**, **5 `visual` scenarios** re-run after the fixes. The default suite now takes about 5.5 minutes
+(SPEC 7 asks for under 30 s for the unit layer): most of the time is the 258-metric x policy guard matrices, the
+Hypothesis tests and the AppTest runs; to be trimmed (or split behind a marker) in Phase 7.

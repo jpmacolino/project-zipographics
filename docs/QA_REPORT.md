@@ -5,8 +5,62 @@ summaries are appended at the end of each phase (see CLAUDE.md, "How to work").
 
 ## Summary
 
-_Filled in at the end of the build (test counts per layer, coverage, gate results, bugs found and
-fixed, golden-scenario verification, SPEC §10 checklist)._
+*(Final, end of Phase 7, 2026-11-10. Details per phase follow; figures below are from the last full run.)*
+
+**Tests** (`uv run python scripts/check.py`, all gates PASS on Python 3.12 and again on 3.11)
+
+| layer | marker | tests | notes |
+|---|---|---|---|
+| unit + property (Hypothesis) | default | 2,254 | synthetic data, mocked HTTP, socket guard; Hypothesis profile `default` 25 examples, `ci` 150 |
+| UI (AppTest) | default | 79 | flow, uploads, restricted mode, regressions |
+| **default suite total** | | **2,333** | about 6 minutes with coverage; the unit layer is about 100 s without it |
+| integration on the real data | `data` | 65 | artifact integrity (47), CLI end to end (9), **8 golden scenarios (9 tests)** |
+| performance budgets | `slow` | 9 | real data, 1,000 ZIPs |
+| visual (Playwright) | `visual` | 7 | screenshots, report to PDF, browser map timing |
+| live Census API | `network` | 5 | run manually; key accepted, registry resolves |
+
+**Coverage:** 98.34 % (line + branch) on `src/zipographics` (floor 90 %); `app/streamlit_app.py` is covered by
+AppTest, not by the coverage number.
+
+**Gates:** ruff lint, ruff format (including the README's Python block), mypy (3.11 target), file size
+(1 MB), secrets, encoding (every text read/write names its encoding) and the Python 3.11 pass.
+
+**Bugs found and fixed:** 57 logged below, each with a regression test. They came from the independent reviews of
+every phase (Phase 2: 76 mutants; Phase 3: 45 failure scenarios and 73 mutants; Phase 4: corrupted-artifact
+mutants; Phase 5: 60 mutants; Phase 6: 36 mutants plus visual QA; Phase 7: a full acceptance review), from running
+the real data (the first real build forced five rules), from the screenshots (five defects) and from CI
+(Python 3.11). **No restricted-mode bypass, key leak or lost leading zero survived the final review**; the ones
+found earlier were bugs 16, 22, 36 and 47-48.
+
+**Golden scenarios:** all 8 pass against an independent oracle (the raw Census API responses re-parsed by separate
+code plus hand arithmetic); see "Golden scenarios: independent verification" below.
+
+**Performance (real data, 1,000 ZIPs, `pytest -m slow -s`):** data load 0.29 s (budget 3 s), parse + review 0.06 s
+(0.5 s), analysis 0.25 s (1 s), map layer 0.48 s (1 s), report 0.55 s (5 s), CSV 0.09 s. Browser map: the map's own
+render 0.6-1.6 s (3 s); end to end 2.1 s at 100 ZIPs and 3.6 s at 1,000 (a deviation, DECISIONS P17).
+
+**Deviations from the SPEC** are in one table in DECISIONS P19 (Appendix C extended to 86 metrics, the 90 % median
+floor, Connecticut counties, the caution tilde, the unit-suite time, ...).
+
+**Manual checks still wanted from the owner:** open the "CSV for Excel" export in Excel and confirm the ZIPs show
+as `02108` (the independent final reviewer did this once through Excel 16 automation and saw `02108` and `00601`;
+SPEC 10.5 asks for a human to do it once); try the app and the printed report; consider a data.census.gov
+spot-check of two figures (ZCTA 02108: B01003 = 3,794, B11001 = 1,973).
+
+### SPEC section 10 acceptance criteria
+
+| # | criterion | status | evidence |
+|---|---|---|---|
+| 1 | fresh clone, README only; no key needed at runtime | **met** (the key step itself not repeated) | a fresh `git clone` + `uv sync` + only the four built data files (no `.env`): the app runs (AppTest on the real data, `streamlit run` health), the CLI profiles ZIPs, the default suite passes with no `data/` and no Playwright; the build was run with the key in Phase 4 |
+| 2 | 8 golden scenarios, independent verification notes | **met** | the table below; `tests/integration/test_golden.py` |
+| 3 | restricted mode: library refuses, UI absent, attestation on every export | **met** | `tests/unit/test_restricted_guards.py` (every guarded function x 3 policy kinds x 86 metrics), the AppTest restricted suite, the final reviewer's sweep (no bypass); attestation in the CSV footer, the report and above the ZIP list |
+| 4 | key handling | **met** | redaction tests; the final reviewer's forced-failure probe with a fake key (400, 403, 429, 500 x5, HTML page, timeout, redirect loop, connection refused): no key in str/repr, tracebacks, DEBUG logs, cache names or files; the missing-key message is exact; the whole git history scanned |
+| 5 | leading zeros survive every path | **met**; the human Excel check is pending | paste, CSV, all Zipcator fixture variants, table, ZIP lists, both CSVs, report; Excel 16 automation showed `02108` |
+| 6 | suite green on 3.11 + 3.12, coverage >= 90 %, lint/type clean, gates clean | **met** | `check.py` runs both; the CI matrix is ubuntu + windows x 3.11 + 3.12 (CI skips the duplicate local 3.11 pass; 45-minute limit) |
+| 7 | performance budgets | **met, with two deviations** | the table above; end-to-end browser map time 3.6 s at 1,000 ZIPs vs 3 s (P17); the unit layer about 100 s vs 30 s (P19) |
+| 8 | screenshots of every step and the printed report reviewed | **met** | `qa/screenshots/` regenerated at the final HEAD and looked at (steps 1-4, restricted, filtered, 100 and 1,000 ZIPs, the report and its 5-page PDF); README images refreshed |
+| 9 | README | **met** | tested by `tests/unit/test_readme.py` (snippet executed, files, flags, sections, `ruff format`) |
+| 10 | no data files over 1 MB, no secrets | **met** | the gate; the final reviewer scanned all 55 commits and every ref for key-like strings and large blobs |
 
 ## Bugs
 
@@ -327,3 +381,31 @@ the 3.11 test run (2,308 passed) had been green all along, so the failure was th
 that pass on one interpreter say nothing about the other when the lockfile resolves different dependencies per
 Python version; the phase-end `check.py` now covers both. Also in this change: Hypothesis profiles (P16) cut the
 default property-test cost (the suite is still dominated by its 2,300 tests, about 80 s of which are AppTest).
+
+### Phase 7: golden scenarios, benchmarks, README, full QA review (2026-11-10)
+Independent final `qa-reviewer` (fresh context; a fake key and a loopback server only; a fresh clone in a temp dir;
+it changed nothing in the repo). **What held up:** no restricted-mode bypass (library probe on four policy shapes,
+including a wrongly built unrestricted policy for a restricted industry; the UI on the real data with injected
+session state); the key forced-failure probe leaked nothing; leading zeros through every input form including
+exotic ones (full-width digits, `0x2108`, BOM, `.0` floats); real Excel 16 opening the Excel CSV with `02108` as text
+and a hostile footer cell as text; the report (no scripts, escaped names, three source links); a git-history scan
+(55 commits) clean; correctness against the raw data for five random ZCTAs, an interpolated median, an index and
+the Kansas City state populations; the golden oracle imports nothing from the package.
+
+| # | severity | finding | handling |
+|---|---|---|---|
+| H1 | HIGH | `ruff format --check` failed on the README's Python block, so `check.py` and CI were red | **Fixed** (bug 56); the README is now format-checked by a test |
+| M1 | MEDIUM | a trade-area median in an open-ended bracket displayed one unit off ("$199,999+", "$1,999,999+"; reproduced with ZIPs 01741/01770 and 90210/90212) | **Fixed** (bug 54): stored as bound + 1 like a published coded median; the real-data CLI re-checked |
+| M2 | MEDIUM | CI could exceed its 30-minute limit (suite run twice per job, `ci` Hypothesis profile) | **Fixed** (bug 57): CI skips the local 3.11 pass; 45 minutes |
+| M3 | MEDIUM | the QA report lacked the final summary, a Phase 7 entry, one bug table and the Excel check | **Fixed**: this summary and entry; bugs 33-57 in one table |
+| M4 | MEDIUM | the unit layer takes about 100 s, SPEC says under 30 s, no decision recorded | **Recorded** as a deviation (P19); Hypothesis profiles applied first as asked; `pytest-xdist` only halves it |
+| L1 | LOW | screenshots predated the last UI changes | **Fixed**: the visual suite re-run at the final HEAD (its settle time lengthened after a blank-map capture artifact) and the screenshots looked at again |
+| L2 | LOW | report chart legends touching bars | already fixed (bug 45); verified in the new report screenshot |
+| L3 | LOW | the app listened on the LAN | **Fixed**: `server.address = 127.0.0.1`, README note, test |
+| L4 | LOW | "0.0 % of United States's households" | **Fixed**: "<0.1 %" and "the United States'" |
+| L5 | LOW | a 400 echoing `&key=` reported as a rejected key | **Fixed** (bug 55) |
+| L6 | LOW | goldens 2 and 4 thin; golden 3 not only large margins; the Tampa "re-saved" copy is the semicolon variant | **Strengthened** (goldens 2 and 4 now compare Boston's own owner share and median, the per-ZIP Puerto Rico values and the DP03 shares); the other two **recorded** (P19) |
+| L7 | LOW | documentation drift: "258-metric", D9's 74 metrics, 223/240 variables, SPEC 5.5 vs P14, owner not yet told | **Fixed or recorded**: one deviations table (P19); the final report to the owner lists them |
+| L8 | LOW | the README dashboard image was the old layout | **Fixed**: refreshed from the final run |
+
+Gates after triage: see the Summary (2,333 default tests, 65 `data`, 9 `slow`, 7 `visual`; coverage 98.34 %).

@@ -295,8 +295,12 @@ def _interpolated_median(spec: metrics.MedianSpec, data: _Data, w: F, nan: F) ->
             nan, nan, np.asarray(incomplete), np.asarray("none", dtype=object), "interpolated"
         )
     moe = stats.median_moe(counts, moes, bounds) if median.code == "none" else None
+    # a median in an open-ended bracket is a bound. Store it the way the API stores a published
+    # coded median (shifted by one: 250,001 for "$250,000+"), so ``stats.coded_bound`` shows and
+    # compares every coded value from its published bound (Phase 7 review M1).
+    value = median.value + {"top": 1.0, "bottom": -1.0}.get(median.code, 0.0)
     return _Result(
-        np.asarray(median.value),
+        np.asarray(value),
         np.asarray(np.nan if moe is None else moe),
         np.asarray(incomplete),
         np.asarray(median.code, dtype=object),

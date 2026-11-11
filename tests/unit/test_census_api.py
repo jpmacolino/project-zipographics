@@ -502,3 +502,30 @@ def test_log_lines_for_successful_requests_have_no_key(
     )
     assert caplog.text and KEY not in caplog.text
     assert "api.census.gov" in caplog.text
+
+
+def test_a_400_that_merely_echoes_the_key_parameter_is_not_a_rejected_key(tmp_path: Path) -> None:
+    # Phase 7 final review L5: a malformed-variable 400 often echoes "...&key=<key>"; "key" in the
+    # in the body is not evidence that the key was refused. The key is still redacted.
+    body = f"error: unknown variable 'B99999_001E' in get=B99999_001E&for=state:*&key={KEY}"
+    session = FakeSession(FakeResponse(400, body))
+    with pytest.raises(CensusApiError) as exc:
+        make_client(tmp_path, session).fetch_table("detailed", 2024, "state", state_vars())
+    assert not isinstance(exc.value, RejectedKeyError)
+    assert "unknown variable" in str(exc.value) and KEY not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "error: invalid key",
+        "Invalid Key",
+        "A valid key must be included",
+        "The key is not activated",
+    ],
+)
+def test_a_400_that_says_the_key_is_bad_still_is_a_rejected_key(tmp_path: Path, body: str) -> None:
+    with pytest.raises(RejectedKeyError):
+        make_client(tmp_path, FakeSession(FakeResponse(400, body))).fetch_table(
+            "detailed", 2024, "state", state_vars()
+        )

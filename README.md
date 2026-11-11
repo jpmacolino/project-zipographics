@@ -31,6 +31,8 @@ newer is supported). On Windows: `powershell -c "irm https://astral.sh/uv/instal
    downloads in `data/raw/`). Options: `--refresh` (ignore cached downloads), `--vintage 2024`,
    `--only acs|geo`, `--no-geo`, `--tolerance` (map simplification), `--data-dir`.
 4. **Run the app:** `uv run streamlit run app/streamlit_app.py`
+   It opens at <http://127.0.0.1:8501> and listens on this computer only
+   (`.streamlit/config.toml`); remove the `address` line to share it on your network.
 
 If the data has not been built the app says so and shows the command to run.
 
@@ -115,9 +117,16 @@ current rules before uploading a list.
 
   ```python
   import pandas as pd
+
   n_notes = sum(1 for line in open("acme.csv", encoding="utf-8-sig") if line.startswith('"Note:'))
-  table = pd.read_csv("acme.csv", dtype=str, keep_default_na=False, encoding="utf-8-sig",
-                      skipfooter=n_notes + 1, engine="python")  # dtype=str keeps the ZIP zeros
+  table = pd.read_csv(
+      "acme.csv",
+      dtype=str,
+      keep_default_na=False,
+      encoding="utf-8-sig",
+      skipfooter=n_notes + 1,
+      engine="python",
+  )  # dtype=str keeps the ZIP zeros
   ```
 
 - **Report:** one HTML file with no scripts or external requests: open it in any browser;

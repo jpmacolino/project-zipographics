@@ -50,6 +50,13 @@ class KpiCard:
     tooltip: str  # why the card is marked; empty when it is not
 
 
+def possessive(name: str) -> str:
+    """The possessive: Florida's, Massachusetts', the United States' (for a nation)."""
+    if name == "United States":
+        name = "the United States"
+    return name + ("'" if name.endswith("s") else "'s")
+
+
 def cards(a: Analysis) -> list[KpiCard]:
     """The cards for ``a``'s lens: the five core ones, then the lens's own."""
     out: list[KpiCard] = []
@@ -75,7 +82,8 @@ def cards(a: Analysis) -> list[KpiCard]:
             share = a.share_of_benchmark(mid)
             if share is not None:
                 noun = _NOUNS.get(mid, m.name.lower())
-                share_text = f"{share * 100:.1f} % of {bench}'s {noun}"
+                pct = "<0.1" if 0 < share < 0.0005 else f"{share * 100:.1f}"
+                share_text = f"{pct} % of {possessive(bench)} {noun}"
         tooltip = _EXPLANATION[tier]
         if v.code != "none":
             tooltip = (tooltip + " " + _CODED).strip()

@@ -84,3 +84,15 @@ def test_the_readme_has_every_section_the_spec_asks_for() -> None:
     ]  # fmt: skip
     for needle in need:
         assert needle.lower() in README.lower(), needle
+
+
+def test_the_readme_passes_ruff_format() -> None:
+    # `ruff format` formats the Python blocks in Markdown; an unformatted snippet failed the gate
+    import subprocess
+    import sys
+
+    out = subprocess.run(
+        [sys.executable, "-m", "ruff", "format", "--check", str(ROOT / "README.md")],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )  # fmt: skip
+    assert out.returncode == 0, out.stdout + out.stderr

@@ -123,6 +123,13 @@ def test_golden_2_boston_leading_zeros(
         assert a.trade.values["pop"].estimate == pytest.approx(pop, rel=1e-12)
         assert a.benchmark.name == "Massachusetts"
         assert a.bench.values["owner"].estimate == pytest.approx(ma_owner, rel=1e-9)
+        # Boston's own owner share and interpolated median income, by hand from the raw cells
+        own = sum(o.get("zcta", z, "B25003_002")[0] for z in BOSTON)
+        occ = sum(o.get("zcta", z, "B25003_001")[0] for z in BOSTON)
+        assert a.trade.values["owner"].estimate == pytest.approx(own / occ, rel=1e-9)
+        bands = [sum(o.get("zcta", z, f"B19001_{k:03d}")[0] for z in BOSTON) for k in range(2, 18)]
+        median = o.interpolated_median(bands, o.B19001)
+        assert a.trade.values["median_hh_income"].estimate == pytest.approx(median, rel=1e-6)
         values.append({k: (v.estimate, v.moe) for k, v in a.trade.values.items()})
     assert values[0] == values[1] == values[2]  # identical results from all three inputs
     assert [len(a.summary.repaired) for a in runs.values()] == [0, 8, 8]
@@ -205,6 +212,15 @@ def test_golden_4_puerto_rico(art: data.Artifacts, capsys: pytest.CaptureFixture
     assert a.options.us.name == "United States"
     # how the Data Profile items (DP03, V5) behave for PR ZCTAs: present in the ACS 5-year profile
     uninsured = [a.value(z, "uninsured").estimate for z in a.zips]
+    ids = {k: art.metadata["variables"][k]["id"][:-1] for k in ("DP03_UNINS", "DP03_CIVNONINST")}
+    for z, got in zip(a.zips, uninsured, strict=True):
+        pop, _ = o.get("zcta", z, "B01003_001")
+        assert a.value(z, "pop").estimate == pop  # the published population of each ZCTA
+        x, _ = o.get("zcta", z, ids["DP03_UNINS"])
+        y, _ = o.get("zcta", z, ids["DP03_CIVNONINST"])
+        assert got == pytest.approx(x / y, rel=1e-9)  # the Data Profile counts, divided by hand
+        own, occ = o.get("zcta", z, "B25003_002")[0], o.get("zcta", z, "B25003_001")[0]
+        assert a.value(z, "owner").estimate == pytest.approx(own / occ, rel=1e-9)
     say(
         capsys,
         "GOLDEN 4 Puerto Rico 601, 603, 610, 612 (repaired to 00601...)",

@@ -771,3 +771,31 @@ Server-side budgets (`pytest -m slow -s`, real data, 1,000 ZIPs): data load 0.35
 (`tests/unit/test_readme.py`; the test caught that blank ZIP cells on the summary rows came back as NaN, so the
 snippet uses `keep_default_na=False`); linked files, image sizes, documented flags and the SPEC §10.9 contents are
 checked.
+
+**P19. Phase 7 final-review triage and the deviations list (2026-11-10).** Fixed: README snippet format and the
+README is now executed and format-checked; interpolated top-bracket medians store bound + 1 (bug 54); rejected-key
+detection needs the body to say so (bug 55); CI skips the local-only 3.11 pass and has 45 minutes; the app binds
+127.0.0.1; KPI share text reads "<0.1 %" and "the United States'"; golden 2 and 4 compare Boston's own owner share
+and median and the Puerto Rico per-ZIP values and DP03 shares with the oracle. **Unit-suite time (SPEC 7/9.1 say
+under 30 s for the unit layer):** the unit layer is 2,244 tests and takes about 100 s without coverage
+(about 190 s with it, 300+ s with the CI Hypothesis profile and coverage), spread thinly over all files (no single
+hog; `pytest-xdist` on 16 cores only halves it, so it was not added). The 30 s figure predates the scope; kept as a
+**recorded deviation**, mitigated by Hypothesis profiles (`default` 25 examples locally) and a CI limit of 45 minutes.
+Not changed: the open golden-test caveats (the Tampa "Excel-re-saved" copy is the semicolon variant because Tampa
+has no leading zeros to strip; golden 3's three "good" ZIPs are near-100 % owner shares, so its set is a mix, not
+only large margins) and the absence of a data.census.gov spot-check (the oracle uses the same published API figures).
+
+**Deviations from SPEC v1.0 and supersessions, for the owner (one place).**
+| SPEC | what changed | where |
+|---|---|---|
+| Appendix C | 12 metrics and 18 variables added (chart categories; `age_25_44`); registry is 86 metrics, 240 variables. D9's "74 metrics over about 270 variables" is historical | B17.3, P5 |
+| §4.4 | published medians need 90 % coverage, not 95 % | B16.1 |
+| §4.2 | Connecticut ZCTAs have a county name but no county benchmark; 19 polygons without ACS data are dropped; map tolerance 0.004 | B16.2-4 |
+| §5.5 (muted text) vs §7 | a tilde `~` also marks "use with caution" (§7 wins) | P14 |
+| §5.5 | the filter summary's households follow the In-radius/Full toggle; filters compare at displayed precision | P15, P10 |
+| §5.2 | an input-source radio instead of tabs | P12.3 |
+| §5.7 | restricted table is `st.table`; the grey-cells list too | P12.2, bug 50 |
+| §5.5 order | the map is drawn before the charts, and the filter builder before the table | P17 |
+| §5.6 | the report is built on demand (a button) | P12.5 |
+| §7 | unit layer about 100 s, not under 30 s; end-to-end browser map time 2.9 s at 100 ZIPs and 3.7 s at 1,000 (the map's own render is 0.6-1.6 s) | P19, P17 |
+| §5.7 | `mapview.layer` is in `mapview.py`, `table.order` in `table.py`, presets in `lenses.py` (names differ from the SPEC list) | P1 |

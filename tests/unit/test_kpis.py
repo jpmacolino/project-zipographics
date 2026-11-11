@@ -98,3 +98,25 @@ def test_the_text_lines_match_the_cards() -> None:
     assert len(lines) == len(kpis.cards(run())) and any(
         "Households" in x and "5,500" in x for x in lines
     )
+
+
+def test_a_tiny_share_of_a_big_benchmark_reads_less_than_a_tenth_of_a_percent() -> None:
+    # Phase 7 final review L4: "0.0 % of United States's households"
+    us = an.analyze(
+        ART,
+        parse_paste("33602 33606"),
+        OFF,
+        benchmark=an.analyze(ART, parse_paste("33602"), OFF).options.us,
+    )
+    text = card(us, "hh").share_text
+    assert text == "<0.1 % of the United States' households"
+
+
+def test_a_possessive_after_an_s_has_no_second_s() -> None:
+    a = run()
+    assert card(a, "hh").share_text == "0.1 % of Florida's households"
+    assert (
+        kpis.possessive("United States") == "the United States'"
+        and kpis.possessive("Florida") == "Florida's"
+    )
+    assert kpis.possessive("Massachusetts") == "Massachusetts'"

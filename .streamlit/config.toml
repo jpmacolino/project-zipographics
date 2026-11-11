@@ -2,6 +2,8 @@
 gatherUsageStats = false
 
 [server]
+# only this computer can open the app (the README promises nothing leaves it)
+address = "127.0.0.1"
 maxUploadSize = 5
 
 [client]

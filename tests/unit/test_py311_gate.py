@@ -63,3 +63,19 @@ def test_the_lockfile_pins_numpy_per_python_so_the_stubs_differ() -> None:
     # the reason mypy must run on 3.11 itself: the same code meets a different numpy there
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
     assert "python_full_version < '3.12'" in lock and "python_full_version >= '3.12'" in lock
+
+
+def test_ci_does_not_run_the_suite_twice_and_has_room_to_finish() -> None:
+    # Phase 7 final review M2: check.py's local 3.11 pass would double every CI job; the matrix
+    # already covers 3.11, so CI skips it and has a 45-minute limit
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "check.py --skip-py311" in ci
+    minutes = int(ci.split("timeout-minutes:")[1].split()[0])
+    assert minutes >= 45
+
+
+def test_the_app_listens_on_this_computer_only() -> None:
+    # Phase 7 final review L3: without an address Streamlit also listens on the LAN
+    config = tomllib.loads((ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
+    assert config["server"]["address"] == "127.0.0.1"
+    assert config["browser"]["gatherUsageStats"] is False

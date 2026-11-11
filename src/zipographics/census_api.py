@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import random
+import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -44,6 +45,13 @@ MISSING_KEY_MESSAGE = (
     "https://www.census.gov/data/developers/api-key.html, activate it from the email, then add "
     "the line CENSUS_API_KEY=<your key> to the .env file in the project folder (see "
     ".env.example). The app itself never needs the key."
+)
+#: A 400 body that says the key itself was refused (a bare "key" is not enough: a malformed-variable
+#: 400 often echoes ``&key=...``).
+_KEY_REFUSED = re.compile(
+    r"(invalid|missing|expired|unknown|unauthori[sz]ed)\s+(api\s+)?key|valid\s+key|"
+    r"key\s+(is\s+|was\s+)?(not\s+|in)?(valid|activated|accepted|recogni[sz]ed|authori[sz]ed)",
+    re.IGNORECASE,
 )
 REJECTED_KEY_MESSAGE = (
     "The Census API rejected the API key. Check that it was copied completely and activated "
@@ -341,7 +349,9 @@ class CensusClient:
             raise NetworkError(_BLOCKED_MESSAGE.format(status=status))
         if status == 429 or status >= 500:
             return "retry", f"HTTP {status}"
-        if status in (400, 401) and "key" in body.lower():
+        if status == 401 and "key" in body.lower():
+            raise RejectedKeyError(REJECTED_KEY_MESSAGE)
+        if status == 400 and _KEY_REFUSED.search(body):
             raise RejectedKeyError(REJECTED_KEY_MESSAGE)
         raise CensusApiError(
             self._clean(f"The Census API returned HTTP {status}: {self._snippet(body)}")

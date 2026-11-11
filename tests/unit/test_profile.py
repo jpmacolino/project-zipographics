@@ -237,7 +237,9 @@ def test_trade_area_median_in_the_open_top_bracket_is_a_bound() -> None:
     a, ca = income_rows({17: 300}, 250_001, "top")
     b, cb = income_rows({17: 100, 16: 10}, 250_001, "top")
     v = val(make_frame({"A": a, "B": b}, {"A": ca, "B": cb}), ["A", "B"], "median_hh_income")
-    assert v.estimate == 200_000
+    # stored like a published coded median (bound + 1: 250,001 for "$250,000+"), so it displays as
+    # "$200,000+" (Phase 7 review M1; the old expectation, the bare bound, showed $199,999+)
+    assert v.estimate == 200_001
     assert v.code == "top" and v.moe is None
     assert v.tier == "caution"
 

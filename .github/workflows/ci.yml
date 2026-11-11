@@ -15,7 +15,7 @@ concurrency:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -31,4 +31,5 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       # ruff lint, ruff format --check, mypy, pytest + coverage (>= 90 %), file-size and secrets gates
-      - run: uv run python scripts/check.py
+      # the matrix already runs 3.11 and 3.12, so the local-only second pass is skipped here
+      - run: uv run python scripts/check.py --skip-py311

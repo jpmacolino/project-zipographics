@@ -89,7 +89,7 @@ def shot(page, name: str, tall: bool = True) -> None:  # type: ignore[no-untyped
     if tall:
         height = page.evaluate("document.querySelector('[data-testid=stMain]').scrollHeight")
         page.set_viewport_size({"width": 1400, "height": min(max(int(height) + 80, 900), 9000)})
-        page.wait_for_timeout(800)
+        page.wait_for_timeout(2500)  # the map frame re-renders after the resize
     page.screenshot(path=str(SHOTS / f"{name}.png"))
     page.set_viewport_size({"width": 1400, "height": 900})
 
